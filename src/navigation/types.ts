@@ -5,6 +5,7 @@ export type RootStackParamList = {
   GroupForm: { groupId?: string } | undefined;
   GroupDetail: { groupId: string };
   ExpenseForm: { groupId: string; expenseId?: string };
+  Backup: undefined;
 };
 
 export type ScreenProps<K extends keyof RootStackParamList> = NativeStackScreenProps<RootStackParamList, K>;

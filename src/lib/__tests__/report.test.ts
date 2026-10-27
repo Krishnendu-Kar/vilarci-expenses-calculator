@@ -20,6 +20,12 @@ describe('text report', () => {
     assert.match(text, /Person B: paid ₹1,000, share ₹1,750 → owes ₹750/);
     assert.match(text, /paid by Person B ₹1,000 \+ Person C ₹500, for Person A & Person B/);
     assert.match(text, /📝 Room 12/);
+    assert.match(text, /^3 people · 2 expenses/m);
+  });
+
+  it('labels custom splits so they read apart from the payers', () => {
+    const custom = group(P, [expense('Dinner', 300, { A: 20000, B: 10000 }, P, { mode: 'shares', values: { A: 1, B: 1, C: 1 } })]);
+    assert.match(buildTextReport(custom), /paid by Person A ₹200 \+ Person B ₹100, split Person A ₹100, Person B ₹100, Person C ₹100/);
   });
 
   it('says when everyone is settled', () => {

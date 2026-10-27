@@ -77,7 +77,8 @@ export function buildTextReport(group: Group) {
       lines.push(`_${longDate(day)}_`);
     }
     lines.push(`• ${e.title} — ${money(e.amount)}`);
-    lines.push(`   paid by ${payerLong(e, d.names)}, ${splitLong(e, d.names, group.members.length)}`);
+    const split = splitLong(e, d.names, group.members.length);
+    lines.push(`   paid by ${payerLong(e, d.names)}, ${e.splitMode === 'equal' ? split : `split ${split}`}`);
     if (e.note) lines.push(`   📝 ${e.note}`);
   }
 
@@ -113,7 +114,9 @@ export function buildHtmlReport(group: Group, now = new Date()) {
     .sort((a, b) => b.net - a.net)
     .map((b) => {
       const cls = isSettled(b.net) ? '' : b.net > 0 ? 'pos' : 'neg';
-      const moved = b.sent || b.received ? money(b.sent - b.received) : '—';
+      const moved = [b.sent ? `sent ${money(b.sent)}` : '', b.received ? `got ${money(b.received)}` : '']
+        .filter(Boolean)
+        .join(', ') || '—';
       return `<tr><td>${n(b.memberId)}</td><td class="r">${money(b.paid)}</td><td class="r">${money(b.share)}</td><td class="r">${moved}</td><td class="r ${cls}"><b>${balanceWords(b.net)}</b></td></tr>`;
     })
     .join('');
@@ -189,7 +192,7 @@ export function buildHtmlReport(group: Group, now = new Date()) {
   ${transfers}
 
   <h2>Balances</h2>
-  <table><tr><th>Person</th><th class="r">Paid</th><th class="r">Fair share</th><th class="r">Settled</th><th class="r">Balance</th></tr>${balances}</table>
+  <table><tr><th>Person</th><th class="r">Paid</th><th class="r">Fair share</th><th class="r">Settle-up payments</th><th class="r">Balance</th></tr>${balances}</table>
 
   ${cats.length ? `<h2>Spending by category</h2><table>${categories}</table>` : ''}
 

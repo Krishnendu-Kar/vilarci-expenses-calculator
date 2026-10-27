@@ -16,7 +16,8 @@ export function shortDate(ts: number) {
 }
 
 export function plural(n: number, word: string) {
-  return `${n} ${word}${n === 1 ? '' : 's'}`;
+  if (n === 1) return `${n} ${word}`;
+  return `${n} ${word === 'person' ? 'people' : `${word}s`}`;
 }
 
 /** Local YYYY-MM-DD (toISOString would shift across midnight in IST). */

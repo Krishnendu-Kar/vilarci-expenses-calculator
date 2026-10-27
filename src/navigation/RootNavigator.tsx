@@ -4,6 +4,7 @@ import { GroupsScreen } from '../screens/GroupsScreen';
 import { GroupFormScreen } from '../screens/GroupFormScreen';
 import { GroupDetailScreen } from '../screens/GroupDetailScreen';
 import { ExpenseFormScreen } from '../screens/ExpenseFormScreen';
+import { BackupScreen } from '../screens/BackupScreen';
 import { colors } from '../theme/colors';
 import type { RootStackParamList } from './types';
 
@@ -33,6 +34,7 @@ export function RootNavigator() {
           component={ExpenseFormScreen}
           options={({ route }) => ({ title: route.params.expenseId ? 'Edit expense' : 'Add expense' })}
         />
+        <Stack.Screen name="Backup" component={BackupScreen} options={{ title: 'Backup & restore' }} />
       </Stack.Navigator>
     </NavigationContainer>
   );
