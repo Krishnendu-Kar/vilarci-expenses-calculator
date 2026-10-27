@@ -22,7 +22,8 @@ export function splitShort(e: Expense, memberCount: number) {
     case 'percent':
       return 'by %';
     default:
-      return e.splitAmong.length === memberCount ? 'split with everyone' : `split ${e.splitAmong.length} ways`;
+      if (e.splitAmong.length === memberCount) return 'split with everyone';
+      return e.splitAmong.length === 1 ? 'for one person' : `split ${e.splitAmong.length} ways`;
   }
 }
 

@@ -29,12 +29,35 @@ A group is a set of people who share costs, such as "Goa trip" or "Room 204 mess
 
 | Feature | Details |
 |---|---|
-| Amount | Enter it in rupees, with up to 2 decimals (₹1,200.50). Amounts are stored as whole paise, so totals never drift. |
+| Amount | Enter it in rupees, with up to 2 decimals (₹1,200.50). Amounts are stored as whole paise, so totals never drift. You don't need to know the total: type a sum like `48+80+64` or `180x3` and the app shows **= ₹192**. A **+** button adds the plus sign, since phone number keyboards don't have one. |
 | Title | Optional. "Boat ride", "Rice", "Ice cream". If left blank, the category name is used. |
 | Date | Defaults to today. Tap to pick any date (the calendar on a phone, a date input on the web). |
 | Category | Food, Travel, Stay, Groceries, Fun, Shopping or Other. Each has an icon, and the Stats tab uses them. |
 | Note | Optional, up to 200 characters, e.g. a bill number or who it was really for. A note icon shows on the expense in the list. |
-| Edit / delete | Tap any expense to change or delete it. |
+| Edit / delete | Tap any expense to change or delete it. The button says **Update changes** and only becomes active once you've actually changed something. |
+| Drafts | If you leave Add expense without adding (going back, switching screens, closing the app), what you typed is saved for that group. Next time you'll see *"Draft restored from where you left off"* with a **Discard** option. Adding the expense clears the draft. |
+
+### Many at once (paste from your group chat)
+
+At the top of Add expense, switch **One expense / Many at once**. Paste a message from WhatsApp (or type one line per person) and the app reads every amount, totals it, and shows a preview before adding anything. Nobody needs to know the total first.
+
+| You type | The app reads it as |
+|---|---|
+| `Krish - 48,80,64,180(3),120` | Krish paid each amount for everyone. `(3)` = only 3 people shared it; the preview asks which 3. |
+| `Tamal 290` | Tamal paid ₹290 for everyone. |
+| `Krish 50+50+sayak60` | Krish paid 50 and 50, Sayak paid 60. A name switches who paid. |
+| `Krish+tamal khabr 50 ami diyachi` | **I** paid ₹50 (title "khabr") for Krish and Tamal only. |
+| `Tamal 30 auto amar ar kish ami diyachi` | I paid ₹30 (auto) for Tamal, me and Krish. "kish" is matched to Krish. |
+| `Sayak roll 40 and krish 24 ami pabo` | I'm owed: ₹40 roll for Sayak, ₹24 for Krish. |
+| `Krish owes me 50` · `Tamal paid 90 for Sayak` · `paid by Om 20` | The same ideas in English. |
+
+- **Words it understands:** "paid / diyachi / diyechi / dilam…" (who paid), "pabo / pabe / owes" (who gets it back), "me / I / ami / amar" (you), and "and / ar / +" (joining names). Any other word next to an amount becomes its title.
+- **Names:** matched to group members even with a short form or a one-letter typo (Krish → Krishnendu, kish → Krish). The app asks once **who "me" is** and remembers it for the group. A name it doesn't know can be matched to a member or **added as a new member**.
+- **Preview:** every expense shows who paid and who it's for. **Tap any row** to change the payer or the people. Rows that need an answer are red, and the app says what's missing.
+- **Totals:** a grand total plus how much each person paid.
+- **Mistakes** are listed with their line number ("Line 3: No amounts found…").
+- WhatsApp's `[28/10, 11:28 am] Name:` copy prefix is ignored. Write 1200, not 1,200.
+- Each amount is saved as its own expense, so a wrong one is easy to fix later.
 
 ### Who paid
 
@@ -60,7 +83,7 @@ As you type, the form shows the result live: the amount per person, what each sh
 
 ## 3. Group screen
 
-The top of the screen always shows the **total spent** and the **average per person**. Below that are four tabs. Tap one, or **swipe left/right** to move between them:
+The top of the screen always shows the **total spent** and the **average per person**. Below that are four tabs. Tap one, or **swipe left/right**: the tabs sit side by side and follow your finger, and each one keeps its own scroll position:
 
 ### Expenses
 - Grouped by day (**Today**, **Yesterday**, **Sun, 25 Oct**…) with each day's total.

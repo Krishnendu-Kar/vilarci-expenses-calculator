@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildBackup, mergeGroups, parseBackup, planImport } from '../backup';
 import { sanitizeGroups } from '../migrate';
-import { toPaise } from '../money';
+import { evalAmount, isSum, toPaise } from '../money';
 import { expense, group } from './fixtures';
 
 describe('sanitizeGroups: v1 → v2 migration', () => {
@@ -95,6 +95,25 @@ describe('backup files', () => {
     const merged = mergeGroups(local, incoming);
     assert.deepEqual(merged.map((x) => x.id).sort(), ['g1', 'g2', 'g3']);
     assert.equal(merged.find((x) => x.id === 'g1')?.name, 'Renamed');
+  });
+});
+
+describe('evalAmount', () => {
+  it('adds up sums so nobody needs the total first', () => {
+    assert.equal(evalAmount('48+80+64'), 19200);
+    assert.equal(evalAmount('180*3'), 54000);
+    assert.equal(evalAmount('180x3 + 20'), 56000);
+    assert.equal(evalAmount('500-20.50'), 47950);
+    assert.equal(evalAmount('₹1,200'), 120000);
+    assert.equal(evalAmount('99.99'), 9999);
+  });
+  it('rejects half-typed or odd input', () => {
+    assert.equal(evalAmount(''), null);
+    assert.equal(evalAmount('48+'), null);
+    assert.equal(evalAmount('abc'), null);
+    assert.equal(evalAmount('5*2.5.1'), null);
+    assert.equal(isSum('48+80'), true);
+    assert.equal(isSum('48'), false);
   });
 });
 

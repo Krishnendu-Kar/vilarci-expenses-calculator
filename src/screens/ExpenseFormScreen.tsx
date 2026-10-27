@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { Input } from '../components/Input';
@@ -11,8 +11,10 @@ import { PersonAmountRow } from '../components/PersonAmountRow';
 import { SwipeView } from '../components/SwipeView';
 import { useGroup, useGroups } from '../context/GroupsContext';
 import { allocate } from '../lib/split';
-import { money, paiseToInput, toPaise } from '../lib/money';
+import { evalAmount, isSum, money, paiseToInput, toPaise } from '../lib/money';
 import { todayISO } from '../lib/format';
+import { clearDraft, loadDraft, saveDraft, type ManyForm, type OneForm } from '../lib/drafts';
+import { QuickAddPanel } from './expense/QuickAddPanel';
 import { confirmAction } from '../lib/confirm';
 import { newId } from '../lib/id';
 import { CATEGORIES, categoryOf } from '../data/categories';
@@ -77,6 +79,135 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
   });
   const [error, setError] = useState<string | null>(null);
 
+  // ---- "One expense" / "Many at once", and drafts (new expenses only) ----
+  const isNew = !existing;
+  const [formMode, setFormMode] = useState<'one' | 'many'>('one');
+  const [draftReady, setDraftReady] = useState(!isNew);
+  const [restoredAt, setRestoredAt] = useState<number | null>(null);
+  const [manyInitial, setManyInitial] = useState<ManyForm | undefined>();
+  const [panelKey, setPanelKey] = useState(0);
+  const many = useRef<ManyForm | undefined>(undefined);
+  // Set once the expense is added or the draft is thrown away, so leaving
+  // the page afterwards doesn't save it again.
+  const finished = useRef(false);
+
+  const oneForm: OneForm = useMemo(
+    () => ({ title, amountText, category, date, note, multiPay, payer, payerTexts, mode, selected, values }),
+    [title, amountText, category, date, note, multiPay, payer, payerTexts, mode, selected, values],
+  );
+  // Editing: "Update changes" only lights up once something changed.
+  const initialForm = useRef(JSON.stringify(oneForm));
+  const dirty = JSON.stringify(oneForm) !== initialForm.current;
+
+  const applyOne = (f: OneForm) => {
+    const ids = new Set(allIds);
+    setTitle(f.title);
+    setAmountText(f.amountText);
+    setCategory(f.category);
+    setDate(f.date);
+    setNote(f.note);
+    setMultiPay(f.multiPay);
+    if (ids.has(f.payer)) setPayer(f.payer);
+    setPayerTexts(f.payerTexts);
+    setMode(f.mode);
+    setSelected(f.selected.filter((id) => ids.has(id)));
+    setValues(f.values);
+  };
+
+  useEffect(() => {
+    if (!isNew) return;
+    loadDraft(groupId)
+      .then((d) => {
+        if (!d) return;
+        if (d.one) applyOne(d.one);
+        if (d.many) {
+          many.current = d.many;
+          setManyInitial(d.many);
+        }
+        setFormMode(d.formMode);
+        setRestoredAt(d.savedAt);
+      })
+      .catch(() => {})
+      .finally(() => setDraftReady(true));
+    // Only on open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupId, isNew]);
+
+  const latest = useRef({ formMode, oneForm });
+  latest.current = { formMode, oneForm };
+  const persist = useCallback(() => {
+    if (!isNew || finished.current) return;
+    const { formMode: fm, oneForm: one } = latest.current;
+    const oneEmpty = !one.title.trim() && !one.amountText.trim() && !one.note.trim();
+    const manyEmpty = !many.current?.text.trim();
+    if (oneEmpty && manyEmpty) clearDraft(groupId).catch(() => {});
+    else
+      saveDraft(groupId, {
+        formMode: fm,
+        ...(oneEmpty ? {} : { one }),
+        ...(manyEmpty ? {} : { many: many.current }),
+        savedAt: Date.now(),
+      }).catch(() => {});
+  }, [groupId, isNew]);
+
+  // Save shortly after each change, and right away when leaving the page.
+  // A plain timer, not state: setting state on every keystroke from the
+  // panel's updates chained renders until React gave up ("Maximum update
+  // depth exceeded") when typing fast.
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const scheduleSave = useCallback(() => {
+    clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(persist, 400);
+  }, [persist]);
+  useEffect(() => {
+    if (draftReady) scheduleSave();
+  }, [oneForm, formMode, draftReady, scheduleSave]);
+  useEffect(
+    () => () => {
+      clearTimeout(saveTimer.current);
+      persist();
+    },
+    [persist],
+  );
+
+  const onManyChange = useCallback(
+    (f: ManyForm) => {
+      many.current = f;
+      scheduleSave();
+    },
+    [scheduleSave],
+  );
+
+  const discardDraft = () => {
+    finished.current = true;
+    clearDraft(groupId).catch(() => {});
+    applyOne({
+      title: '',
+      amountText: '',
+      category: 'food',
+      date: todayISO(),
+      note: '',
+      multiPay: false,
+      payer: allIds[0] ?? '',
+      payerTexts: {},
+      mode: 'equal',
+      selected: allIds,
+      values: { exact: {}, shares: {}, percent: {} },
+    });
+    many.current = undefined;
+    setManyInitial(undefined);
+    setPanelKey((k) => k + 1);
+    setRestoredAt(null);
+    // Typing again starts a fresh draft.
+    setTimeout(() => (finished.current = false), 0);
+  };
+
+  const finish = () => {
+    finished.current = true;
+    if (isNew) clearDraft(groupId).catch(() => {});
+    navigation.goBack();
+  };
+
   if (!group) {
     return (
       <ScreenContainer>
@@ -85,7 +216,8 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
     );
   }
 
-  const amount = toPaise(amountText) ?? 0;
+  // Sums like 48+80+64 are added up; a trailing "+" is ignored while typing.
+  const amount = evalAmount(amountText.replace(/[+\-*x×\s]+$/i, '')) ?? 0;
   const names = Object.fromEntries(members.map((m) => [m.id, m.name]));
   const splitAmong = allIds.filter((id) => selected.includes(id));
   const allSelected = splitAmong.length === allIds.length;
@@ -137,6 +269,7 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
   };
 
   const save = () => {
+    if (amountText.trim() && evalAmount(amountText) == null) return setError("The amount can't be read. Use numbers with + - or x.");
     if (!amount || amount <= 0) return setError('Enter how much was spent.');
 
     // Who paid
@@ -195,7 +328,7 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
       ...(trimmedNote ? { note: trimmedNote } : {}),
       createdAt: existing?.createdAt ?? Date.now(),
     });
-    navigation.goBack();
+    finish();
   };
 
   const remove = () => {
@@ -212,155 +345,203 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
   return (
     <ScreenContainer>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={styles.amountCard}>
-          <Text style={styles.rupee}>₹</Text>
-          <TextInput
-            style={styles.amountInput}
-            value={amountText}
-            onChangeText={(t) => setAmountText(t.replace(/[^0-9.]/g, ''))}
-            placeholder="0"
-            placeholderTextColor={colors.border}
-            keyboardType="decimal-pad"
-            autoFocus={!existing}
-            maxLength={10}
-          />
-        </View>
-
-        <Input
-          label="What was it for?"
-          placeholder="e.g. Boat ride, Rice, Ice cream"
-          value={title}
-          onChangeText={setTitle}
-          maxLength={50}
-        />
-
-        <SectionLabel>Date</SectionLabel>
-        <DateField value={date} onChange={setDate} />
-
-        <SectionLabel>Category</SectionLabel>
-        <View style={styles.chips}>
-          {CATEGORIES.map((c) => (
-            <Chip key={c.key} label={c.label} icon={c.icon} selected={category === c.key} onPress={() => setCategory(c.key)} />
-          ))}
-        </View>
-
-        {/* ---------- Paid by ---------- */}
-        <View style={styles.sectionHead}>
-          <SectionLabel>Paid by</SectionLabel>
-          <Pressable onPress={togglePayerMode} hitSlop={8}>
-            <Text style={styles.link}>{multiPay ? 'One person paid' : 'More than one person paid?'}</Text>
-          </Pressable>
-        </View>
-        {multiPay ? (
-          <View style={styles.box}>
-            {members.map((m) => (
-              <PersonAmountRow
-                key={m.id}
-                name={m.name}
-                prefix="₹"
-                value={payerTexts[m.id] ?? ''}
-                onChangeText={(t) => setPayerTexts((s) => ({ ...s, [m.id]: t }))}
-              />
-            ))}
-            <Remaining assigned={payerSum} total={amount} format={money} />
+        {isNew ? (
+          <View style={styles.modeSwitch}>
+            <Segmented
+              options={[
+                { key: 'one', label: 'One expense' },
+                { key: 'many', label: 'Many at once' },
+              ]}
+              value={formMode}
+              onChange={setFormMode}
+            />
           </View>
+        ) : null}
+
+        {restoredAt ? (
+          <View style={styles.draftBanner}>
+            <Text style={styles.draftText}>Draft restored from where you left off.</Text>
+            <Pressable onPress={discardDraft} hitSlop={8}>
+              <Text style={styles.link}>Discard</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
+        {isNew && formMode === 'many' ? (
+          draftReady ? (
+            <QuickAddPanel key={panelKey} group={group} initial={manyInitial} onChange={onManyChange} onDone={finish} />
+          ) : null
         ) : (
-          <View style={styles.chips}>
-            {members.map((m) => (
-              <Chip key={m.id} label={m.name} selected={payer === m.id} onPress={() => setPayer(m.id)} />
-            ))}
-          </View>
-        )}
+          <>
+            <View style={styles.amountCard}>
+              <Text style={styles.rupee}>₹</Text>
+              <TextInput
+                style={styles.amountInput}
+                value={amountText}
+                onChangeText={(t) => setAmountText(t.replace(/[^0-9.+\-*x×]/gi, ''))}
+                placeholder="0"
+                placeholderTextColor={colors.border}
+                keyboardType="decimal-pad"
+                autoFocus={isNew && formMode === 'one' && !restoredAt}
+                maxLength={60}
+                multiline
+              />
+              {/* The number keyboard has no "+", so sums get a button. */}
+              <Pressable
+                onPress={() => setAmountText((t) => (t && !/[+\-*x×]$/i.test(t) ? `${t}+` : t))}
+                style={styles.plusBtn}
+                hitSlop={6}
+                accessibilityLabel="Add another amount"
+              >
+                <Text style={styles.plusText}>+</Text>
+              </Pressable>
+            </View>
+            {isSum(amountText) ? (
+              <Text style={styles.sumHint}>{amount ? `= ${money(amount)}` : "Can't add that up yet"}</Text>
+            ) : null}
 
-        {/* ---------- Split ---------- */}
-        <SectionLabel>Split</SectionLabel>
-        <Segmented options={SPLIT_OPTIONS} value={mode} onChange={changeMode} />
-        {/* Swipe left/right here to change the split mode. */}
-        <SwipeView
-          index={SPLIT_OPTIONS.findIndex((o) => o.key === mode)}
-          count={SPLIT_OPTIONS.length}
-          onIndexChange={(i) => changeMode(SPLIT_OPTIONS[i].key)}
-          fill={false}
-        >
-          <Text style={styles.help}>{SPLIT_HELP[mode]}</Text>
+            <Input
+              label="What was it for?"
+              placeholder="e.g. Boat ride, Rice, Ice cream"
+              value={title}
+              onChangeText={setTitle}
+              maxLength={50}
+            />
 
-          {mode === 'equal' ? (
-            <View style={styles.box}>
-              <View style={styles.boxHead}>
-                <Text style={styles.boxInfo}>
-                  {splitAmong.length
-                    ? `${splitAmong.length} of ${members.length} people${amount ? ` · ${uneven ? '~' : ''}${money(perHead)} each` : ''}`
-                    : 'Nobody selected'}
-                </Text>
-                <Pressable onPress={() => setSelected(allSelected ? [] : allIds)} hitSlop={8}>
-                  <Text style={styles.link}>{allSelected ? 'Clear' : 'Everyone'}</Text>
-                </Pressable>
-              </View>
-              <View style={styles.chipsTight}>
+            <SectionLabel>Date</SectionLabel>
+            <DateField value={date} onChange={setDate} />
+
+            <SectionLabel>Category</SectionLabel>
+            <View style={styles.chips}>
+              {CATEGORIES.map((c) => (
+                <Chip key={c.key} label={c.label} icon={c.icon} selected={category === c.key} onPress={() => setCategory(c.key)} />
+              ))}
+            </View>
+
+            {/* ---------- Paid by ---------- */}
+            <View style={styles.sectionHead}>
+              <SectionLabel>Paid by</SectionLabel>
+              <Pressable onPress={togglePayerMode} hitSlop={8}>
+                <Text style={styles.link}>{multiPay ? 'One person paid' : 'More than one person paid?'}</Text>
+              </Pressable>
+            </View>
+            {multiPay ? (
+              <View style={styles.box}>
                 {members.map((m) => (
-                  <Chip
+                  <PersonAmountRow
                     key={m.id}
-                    label={m.name}
-                    selected={selected.includes(m.id)}
-                    onPress={() =>
-                      setSelected((s) => (s.includes(m.id) ? s.filter((x) => x !== m.id) : [...s, m.id]))
-                    }
+                    name={m.name}
+                    prefix="₹"
+                    value={payerTexts[m.id] ?? ''}
+                    onChangeText={(t) => setPayerTexts((s) => ({ ...s, [m.id]: t }))}
                   />
                 ))}
+                <Remaining assigned={payerSum} total={amount} format={money} />
               </View>
-            </View>
-          ) : (
-            <View style={styles.box}>
-              {mode !== 'shares' ? (
-                <Pressable onPress={fillEvenly} hitSlop={8} style={styles.fill}>
-                  <Text style={styles.link}>Fill evenly</Text>
-                </Pressable>
-              ) : null}
-              {members.map((m) => (
-                <PersonAmountRow
-                  key={m.id}
-                  name={m.name}
-                  value={customTexts[m.id] ?? ''}
-                  onChangeText={(t) => setValue(mode, m.id, t)}
-                  prefix={mode === 'exact' ? '₹' : undefined}
-                  suffix={mode === 'percent' ? '%' : mode === 'shares' ? 'x' : undefined}
-                  integer={mode === 'shares'}
-                  hint={
-                    mode === 'shares' && shareAmounts[m.id]
-                      ? money(shareAmounts[m.id])
-                      : mode === 'percent' && pctAmounts[m.id]
-                        ? money(pctAmounts[m.id])
-                        : undefined
-                  }
-                />
-              ))}
-              {mode === 'exact' ? <Remaining assigned={exactSum} total={amount} format={money} /> : null}
-              {mode === 'percent' ? <Remaining assigned={pctSum} total={10000} format={(bp) => `${bpToInput(bp)}%`} /> : null}
-              {mode === 'shares' ? (
-                <Text style={[styles.remaining, styles.muted]}>
-                  {totalShares
-                    ? `${totalShares} shares${amount ? ` · ${money(Math.floor(amount / totalShares))} per share` : ''}`
-                    : 'Give someone at least 1 share'}
-                </Text>
-              ) : null}
-            </View>
-          )}
-        </SwipeView>
+            ) : (
+              <View style={styles.chips}>
+                {members.map((m) => (
+                  <Chip key={m.id} label={m.name} selected={payer === m.id} onPress={() => setPayer(m.id)} />
+                ))}
+              </View>
+            )}
 
-        <Input
-          label="Note (optional)"
-          placeholder="Anything to remember, e.g. bill no. or who it was for"
-          value={note}
-          onChangeText={setNote}
-          maxLength={200}
-          multiline
-          style={styles.note}
-        />
+            {/* ---------- Split ---------- */}
+            <SectionLabel>Split</SectionLabel>
+            <Segmented options={SPLIT_OPTIONS} value={mode} onChange={changeMode} />
+            {/* Swipe left/right here to change the split mode. */}
+            <SwipeView
+              index={SPLIT_OPTIONS.findIndex((o) => o.key === mode)}
+              count={SPLIT_OPTIONS.length}
+              onIndexChange={(i) => changeMode(SPLIT_OPTIONS[i].key)}
+              fill={false}
+            >
+              <Text style={styles.help}>{SPLIT_HELP[mode]}</Text>
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+              {mode === 'equal' ? (
+                <View style={styles.box}>
+                  <View style={styles.boxHead}>
+                    <Text style={styles.boxInfo}>
+                      {splitAmong.length
+                        ? `${splitAmong.length} of ${members.length} people${amount ? ` · ${uneven ? '~' : ''}${money(perHead)} each` : ''}`
+                        : 'Nobody selected'}
+                    </Text>
+                    <Pressable onPress={() => setSelected(allSelected ? [] : allIds)} hitSlop={8}>
+                      <Text style={styles.link}>{allSelected ? 'Clear' : 'Everyone'}</Text>
+                    </Pressable>
+                  </View>
+                  <View style={styles.chipsTight}>
+                    {members.map((m) => (
+                      <Chip
+                        key={m.id}
+                        label={m.name}
+                        selected={selected.includes(m.id)}
+                        onPress={() =>
+                          setSelected((s) => (s.includes(m.id) ? s.filter((x) => x !== m.id) : [...s, m.id]))
+                        }
+                      />
+                    ))}
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.box}>
+                  {mode !== 'shares' ? (
+                    <Pressable onPress={fillEvenly} hitSlop={8} style={styles.fill}>
+                      <Text style={styles.link}>Fill evenly</Text>
+                    </Pressable>
+                  ) : null}
+                  {members.map((m) => (
+                    <PersonAmountRow
+                      key={m.id}
+                      name={m.name}
+                      value={customTexts[m.id] ?? ''}
+                      onChangeText={(t) => setValue(mode, m.id, t)}
+                      prefix={mode === 'exact' ? '₹' : undefined}
+                      suffix={mode === 'percent' ? '%' : mode === 'shares' ? 'x' : undefined}
+                      integer={mode === 'shares'}
+                      hint={
+                        mode === 'shares' && shareAmounts[m.id]
+                          ? money(shareAmounts[m.id])
+                          : mode === 'percent' && pctAmounts[m.id]
+                            ? money(pctAmounts[m.id])
+                            : undefined
+                      }
+                    />
+                  ))}
+                  {mode === 'exact' ? <Remaining assigned={exactSum} total={amount} format={money} /> : null}
+                  {mode === 'percent' ? <Remaining assigned={pctSum} total={10000} format={(bp) => `${bpToInput(bp)}%`} /> : null}
+                  {mode === 'shares' ? (
+                    <Text style={[styles.remaining, styles.muted]}>
+                      {totalShares
+                        ? `${totalShares} shares${amount ? ` · ${money(Math.floor(amount / totalShares))} per share` : ''}`
+                        : 'Give someone at least 1 share'}
+                    </Text>
+                  ) : null}
+                </View>
+              )}
+            </SwipeView>
 
-        <PrimaryButton label={existing ? 'Save changes' : 'Add expense'} onPress={save} style={styles.saveBtn} />
-        {existing ? <PrimaryButton label="Delete expense" variant="danger" onPress={remove} style={styles.deleteBtn} /> : null}
+            <Input
+              label="Note (optional)"
+              placeholder="Anything to remember, e.g. bill no. or who it was for"
+              value={note}
+              onChangeText={setNote}
+              maxLength={200}
+              multiline
+              style={styles.note}
+            />
+
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+
+            <PrimaryButton
+              label={existing ? 'Update changes' : 'Add expense'}
+              onPress={save}
+              disabled={!!existing && !dirty}
+              style={styles.saveBtn}
+            />
+            {existing ? <PrimaryButton label="Delete expense" variant="danger" onPress={remove} style={styles.deleteBtn} /> : null}
+          </>
+        )}
       </ScrollView>
     </ScreenContainer>
   );
@@ -403,12 +584,38 @@ const styles = StyleSheet.create({
     paddingVertical: spacing(5),
     marginBottom: spacing(5),
   },
+  modeSwitch: { marginBottom: spacing(4) },
+  draftBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing(3),
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing(3.5),
+    paddingVertical: spacing(2.5),
+    marginBottom: spacing(4),
+  },
+  draftText: { flex: 1, fontSize: font.sm + 1, color: colors.textPrimary },
+  plusBtn: {
+    position: 'absolute',
+    right: spacing(4),
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.surfaceAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  plusText: { fontSize: 24, fontWeight: '700', color: colors.primary, marginTop: -2 },
+  sumHint: { textAlign: 'center', fontSize: font.md, fontWeight: '700', color: colors.primary, marginTop: -spacing(3), marginBottom: spacing(5) },
   rupee: { fontSize: 34, fontWeight: '700', color: colors.textSecondary, marginRight: spacing(1) },
   amountInput: {
     fontSize: 42,
     fontWeight: '800',
     color: colors.textPrimary,
     minWidth: 80,
+    maxWidth: '75%',
     textAlign: 'center',
     padding: 0,
   },

@@ -19,6 +19,8 @@ interface GroupsContextValue {
   deleteGroup: (id: string) => void;
   saveExpense: (groupId: string, expense: Expense) => void;
   deleteExpense: (groupId: string, expenseId: string) => void;
+  /** Adds several expenses at once, and any new members they mention. */
+  addExpenses: (groupId: string, expenses: Expense[], newMembers?: Member[]) => void;
   addPayment: (groupId: string, payment: Omit<Payment, 'id' | 'createdAt'>) => void;
   deletePayment: (groupId: string, paymentId: string) => void;
   /** Adds imported groups; ones with the same id replace the local copy. */
@@ -105,6 +107,16 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
     [editGroup],
   );
 
+  const addExpenses = useCallback(
+    (groupId: string, expenses: Expense[], newMembers: Member[] = []) =>
+      editGroup(groupId, (g) => ({
+        ...g,
+        members: [...g.members, ...newMembers],
+        expenses: [...expenses, ...g.expenses],
+      })),
+    [editGroup],
+  );
+
   const addPayment = useCallback(
     (groupId: string, payment: Omit<Payment, 'id' | 'createdAt'>) =>
       editGroup(groupId, (g) => ({
@@ -133,6 +145,7 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
       deleteGroup,
       saveExpense,
       deleteExpense,
+      addExpenses,
       addPayment,
       deletePayment,
       importGroups,
@@ -147,6 +160,7 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
       deleteGroup,
       saveExpense,
       deleteExpense,
+      addExpenses,
       addPayment,
       deletePayment,
       importGroups,
