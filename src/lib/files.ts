@@ -46,10 +46,14 @@ export async function sharePdf(fileName: string, html: string, beforeShare?: Bef
     w.print();
     return;
   }
-  const { uri } = await Print.printToFileAsync({ html });
-  // printToFileAsync picks a random name; give it one people recognise.
+  // printToFileAsync saves under a random name, in a folder this app may not
+  // read inside Expo Go (moving it fails with "Missing 'READ' permission").
+  // So take the PDF bytes instead and write our own, properly named file.
+  const { base64 } = await Print.printToFileAsync({ html, base64: true });
+  if (!base64) throw new Error("The PDF couldn't be created.");
   const named = new File(Paths.cache, fileName);
-  await new File(uri).move(named, { overwrite: true });
+  named.create({ overwrite: true });
+  named.write(base64, { encoding: 'base64' });
   await beforeShare?.();
   await shareUri(named.uri, 'application/pdf', fileName, 'com.adobe.pdf');
 }
