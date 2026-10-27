@@ -1,11 +1,11 @@
-import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { Segmented } from '../components/Segmented';
 import { Fab } from '../components/Fab';
 import { ActionSheet, type SheetOption } from '../components/ActionSheet';
-import { SwipeView } from '../components/SwipeView';
+import { Pager } from '../components/Pager';
 import { useGroup, useGroups } from '../context/GroupsContext';
 import { computeBalances, groupTotal, suggestTransfers } from '../lib/split';
 import { money } from '../lib/money';
@@ -52,6 +52,7 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
   const group = useGroup(route.params.groupId);
   const { recordVisit } = useGroups();
   const [tab, setTab] = useState<Tab>('expenses');
+  const onPage = useCallback((i: number) => setTab(TABS[i]), []);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -142,21 +143,17 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
         />
       </View>
 
-      <SwipeView index={TABS.indexOf(tab)} count={TABS.length} onIndexChange={(i) => setTab(TABS[i])}>
-        {tab === 'expenses' ? (
-          <ExpensesTab
-            group={group}
-            names={names}
-            onOpen={(e) => navigation.navigate('ExpenseForm', { groupId: group.id, expenseId: e.id })}
-          />
-        ) : tab === 'members' ? (
-          <MembersTab balances={balances} names={names} />
-        ) : tab === 'settle' ? (
-          <SettleTab group={group} transfers={transfers} names={names} onShare={() => setSheetOpen(true)} />
-        ) : (
-          <StatsTab group={group} balances={balances} names={names} />
-        )}
-      </SwipeView>
+      {/* Same order as TABS. */}
+      <Pager index={TABS.indexOf(tab)} onIndexChange={onPage}>
+        <ExpensesTab
+          group={group}
+          names={names}
+          onOpen={(e) => navigation.navigate('ExpenseForm', { groupId: group.id, expenseId: e.id })}
+        />
+        <MembersTab balances={balances} names={names} />
+        <SettleTab group={group} transfers={transfers} names={names} onShare={() => setSheetOpen(true)} />
+        <StatsTab group={group} balances={balances} names={names} />
+      </Pager>
 
       {tab === 'expenses' ? (
         <Fab label="Add expense" onPress={() => navigation.navigate('ExpenseForm', { groupId: group.id })} />

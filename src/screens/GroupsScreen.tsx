@@ -6,7 +6,7 @@ import { ScreenContainer } from '../components/ScreenContainer';
 import { EmptyState } from '../components/EmptyState';
 import { Fab } from '../components/Fab';
 import { FilterBar, type FilterOption } from '../components/FilterBar';
-import { SwipeView } from '../components/SwipeView';
+import { Pager } from '../components/Pager';
 import { useGroups } from '../context/GroupsContext';
 import { getLastBackup } from '../lib/storage';
 import { computeBalances, groupTotal, suggestTransfers } from '../lib/split';
@@ -43,8 +43,13 @@ const FILTER_EMPTY: Record<Exclude<GroupFilter, 'all'>, { icon: IconName; title:
 export function GroupsScreen({ navigation }: ScreenProps<'Groups'>) {
   const { groups, ready, visits } = useGroups();
   const [filter, setFilter] = useState<GroupFilter>('all');
-  const visible = useMemo(() => filterGroups(groups, filter, visits), [groups, filter, visits]);
+  // Every filter's list is built up front: the pager keeps all of them mounted.
+  const lists = useMemo(
+    () => Object.fromEntries(FILTERS.map((f) => [f.key, filterGroups(groups, f.key, visits)])) as Record<GroupFilter, Group[]>,
+    [groups, visits],
+  );
   const filterIndex = FILTERS.findIndex((f) => f.key === filter);
+  const onPage = useCallback((i: number) => setFilter(FILTERS[i].key), []);
   const [lastBackup, setLastBackup] = useState<number | null | undefined>(undefined);
 
   useLayoutEffect(() => {
@@ -76,9 +81,9 @@ export function GroupsScreen({ navigation }: ScreenProps<'Groups'>) {
     );
   }
 
-  const list = (
+  const renderList = (f: GroupFilter) => (
     <FlatList
-      data={visible}
+      data={lists[f]}
       keyExtractor={(g) => g.id}
       contentContainerStyle={styles.list}
       ListHeaderComponent={
@@ -105,16 +110,16 @@ export function GroupsScreen({ navigation }: ScreenProps<'Groups'>) {
               <Text style={styles.importLink}>Have a backup or a group file? Import it</Text>
             </Pressable>
           </View>
-        ) : filter !== 'all' ? (
+        ) : f !== 'all' ? (
           <View>
-            <EmptyState {...FILTER_EMPTY[filter]} />
+            <EmptyState {...FILTER_EMPTY[f]} />
           </View>
         ) : null
       }
       renderItem={({ item }) => (
         <GroupCard
           group={item}
-          visits={filter === 'visited' ? visits[item.id]?.count : undefined}
+          visits={f === 'visited' ? visits[item.id]?.count : undefined}
           onPress={() => navigation.navigate('GroupDetail', { groupId: item.id })}
         />
       )}
@@ -126,12 +131,14 @@ export function GroupsScreen({ navigation }: ScreenProps<'Groups'>) {
       {groups.length ? (
         <>
           <FilterBar options={FILTERS} value={filter} onChange={setFilter} />
-          <SwipeView index={filterIndex} count={FILTERS.length} onIndexChange={(i) => setFilter(FILTERS[i].key)}>
-            {list}
-          </SwipeView>
+          <Pager index={filterIndex} onIndexChange={onPage}>
+            {FILTERS.map((f) => (
+              <React.Fragment key={f.key}>{renderList(f.key)}</React.Fragment>
+            ))}
+          </Pager>
         </>
       ) : (
-        list
+        renderList('all')
       )}
       <Fab
         label="New group"
