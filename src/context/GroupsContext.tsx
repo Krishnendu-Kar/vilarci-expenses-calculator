@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import type { Expense, Group, GroupKind, Member, Payment } from '../types';
 import { loadGroups, saveGroups } from '../lib/storage';
 import { newId } from '../lib/id';
+import { mergeGroups } from '../lib/backup';
 
 interface GroupInput {
   name: string;
@@ -19,6 +20,8 @@ interface GroupsContextValue {
   deleteExpense: (groupId: string, expenseId: string) => void;
   addPayment: (groupId: string, payment: Omit<Payment, 'id' | 'createdAt'>) => void;
   deletePayment: (groupId: string, paymentId: string) => void;
+  /** Adds imported groups; ones with the same id replace the local copy. */
+  importGroups: (incoming: Group[]) => void;
 }
 
 const GroupsContext = createContext<GroupsContextValue | null>(null);
@@ -97,6 +100,10 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
     [editGroup],
   );
 
+  const importGroups = useCallback((incoming: Group[]) => {
+    setGroups((gs) => mergeGroups(gs, incoming));
+  }, []);
+
   const value = useMemo(
     () => ({
       groups,
@@ -108,8 +115,9 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
       deleteExpense,
       addPayment,
       deletePayment,
+      importGroups,
     }),
-    [groups, ready, createGroup, updateGroup, deleteGroup, saveExpense, deleteExpense, addPayment, deletePayment],
+    [groups, ready, createGroup, updateGroup, deleteGroup, saveExpense, deleteExpense, addPayment, deletePayment, importGroups],
   );
 
   return <GroupsContext.Provider value={value}>{children}</GroupsContext.Provider>;

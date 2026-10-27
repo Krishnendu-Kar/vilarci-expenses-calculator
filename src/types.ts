@@ -11,20 +11,26 @@ export interface Member {
 }
 
 /**
- * equal: amount is divided evenly among `splitAmong`.
- * exact: each person in `splitAmong` owes `exactShares[id]`.
+ * equal:   amount is divided evenly among `splitAmong`.
+ * exact:   splitValues[id] is the paise that person owes.
+ * shares:  splitValues[id] is a share count (2 = double portion).
+ * percent: splitValues[id] is a percentage in basis points (33.5% = 3350).
  */
-export type SplitMode = 'equal' | 'exact';
+export type SplitMode = 'equal' | 'exact' | 'shares' | 'percent';
 
 export interface Expense {
   id: string;
   title: string;
   amount: number;
   category: CategoryKey;
-  paidBy: string;
+  /** Who paid and how much. Always adds up to `amount`. */
+  payers: Record<string, number>;
   splitMode: SplitMode;
   splitAmong: string[];
-  exactShares?: Record<string, number>;
+  splitValues?: Record<string, number>;
+  /** Day the money was spent, local YYYY-MM-DD. */
+  date: string;
+  note?: string;
   createdAt: number;
 }
 

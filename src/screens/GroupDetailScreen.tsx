@@ -1,5 +1,5 @@
 import React, { useLayoutEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, SectionList, Share, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { Segmented } from '../components/Segmented';
@@ -13,12 +13,14 @@ import {
   expenseShares,
   groupTotal,
   isSettled,
+  sortExpenses,
   suggestTransfers,
   type MemberBalance,
   type Transfer,
 } from '../lib/split';
 import { money } from '../lib/money';
-import { plural, shortDate } from '../lib/format';
+import { dayLabel, plural, shortDate } from '../lib/format';
+import { payerText, splitShort } from '../lib/describe';
 import { confirmAction } from '../lib/confirm';
 import { categoryOf } from '../data/categories';
 import { colors } from '../theme/colors';
@@ -111,12 +113,27 @@ function ExpensesTab({
   names: Record<string, string>;
   onOpen: (e: Expense) => void;
 }) {
-  const sorted = useMemo(() => [...group.expenses].sort((a, b) => b.createdAt - a.createdAt), [group.expenses]);
+  const sections = useMemo(() => {
+    const byDay = new Map<string, Expense[]>();
+    for (const e of sortExpenses(group.expenses)) byDay.set(e.date, [...(byDay.get(e.date) ?? []), e]);
+    return [...byDay.entries()].map(([date, data]) => ({
+      date,
+      total: data.reduce((s, e) => s + e.amount, 0),
+      data,
+    }));
+  }, [group.expenses]);
   return (
-    <FlatList
-      data={sorted}
+    <SectionList
+      sections={sections}
       keyExtractor={(e) => e.id}
       contentContainerStyle={styles.list}
+      stickySectionHeadersEnabled={false}
+      renderSectionHeader={({ section }) => (
+        <View style={styles.dayHead}>
+          <Text style={styles.dayLabel}>{dayLabel(section.date)}</Text>
+          <Text style={styles.dayTotal}>{money(section.total)}</Text>
+        </View>
+      )}
       ListEmptyComponent={
         <EmptyState
           icon="receipt-outline"
@@ -126,13 +143,6 @@ function ExpensesTab({
       }
       renderItem={({ item }) => {
         const cat = categoryOf(item.category);
-        const everyone = item.splitAmong.length === group.members.length;
-        const splitText =
-          item.splitMode === 'exact'
-            ? `custom split, ${plural(item.splitAmong.length, 'person')}`
-            : everyone
-              ? 'split with everyone'
-              : `split ${item.splitAmong.length} ways`;
         return (
           <Pressable onPress={() => onOpen(item)} style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
             <View style={styles.catIcon}>
@@ -143,12 +153,12 @@ function ExpensesTab({
                 {item.title}
               </Text>
               <Text style={styles.rowMeta} numberOfLines={1}>
-                {names[item.paidBy] ?? '?'} paid · {splitText}
+                {payerText(item, names)} paid · {splitShort(item, group.members.length)}
               </Text>
             </View>
             <View style={styles.rowRight}>
               <Text style={styles.rowAmount}>{money(item.amount)}</Text>
-              <Text style={styles.rowDate}>{shortDate(item.createdAt)}</Text>
+              {item.note ? <Ionicons name="document-text-outline" size={13} color={colors.textSecondary} /> : null}
             </View>
           </Pressable>
         );
@@ -214,7 +224,7 @@ function SettleTab({
         .map((e) => {
           const shares = expenseShares(e);
           const who = e.splitAmong.length === group.members.length ? 'everyone' : e.splitAmong.map((id) => names[id]).join(', ');
-          return `• ${e.title}: ${money(e.amount)} paid by ${names[e.paidBy]} for ${who}${
+          return `• ${e.title}: ${money(e.amount)} paid by ${payerText(e, names)} for ${who}${
             e.splitMode === 'exact' ? ` (${e.splitAmong.map((id) => `${names[id]} ${money(shares[id])}`).join(', ')})` : ''
           }`;
         }),
@@ -315,6 +325,15 @@ const styles = StyleSheet.create({
   summaryValue: { color: colors.white, fontSize: font.xxl, fontWeight: '800', marginTop: 2 },
   divider: { width: 1, backgroundColor: 'rgba(255,255,255,0.25)' },
   list: { padding: spacing(4), paddingBottom: spacing(28) },
+  dayHead: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: spacing(2),
+    marginBottom: spacing(2),
+    paddingHorizontal: spacing(1),
+  },
+  dayLabel: { fontSize: font.sm, fontWeight: '700', color: colors.textSecondary },
+  dayTotal: { fontSize: font.sm, fontWeight: '600', color: colors.textSecondary },
   explain: { fontSize: font.sm, color: colors.textSecondary, marginBottom: spacing(3), lineHeight: 18 },
   row: {
     flexDirection: 'row',
