@@ -1,47 +1,73 @@
 import React, { useLayoutEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, SectionList, Share, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { Segmented } from '../components/Segmented';
-import { Avatar } from '../components/Avatar';
-import { EmptyState } from '../components/EmptyState';
 import { Fab } from '../components/Fab';
-import { SectionLabel } from '../components/SectionLabel';
-import { useGroup, useGroups } from '../context/GroupsContext';
-import {
-  computeBalances,
-  expenseShares,
-  groupTotal,
-  isSettled,
-  sortExpenses,
-  suggestTransfers,
-  type MemberBalance,
-  type Transfer,
-} from '../lib/split';
+import { ActionSheet, type SheetOption } from '../components/ActionSheet';
+import { useGroup } from '../context/GroupsContext';
+import { computeBalances, groupTotal, suggestTransfers } from '../lib/split';
 import { money } from '../lib/money';
-import { dayLabel, plural, shortDate } from '../lib/format';
-import { payerText, splitShort } from '../lib/describe';
-import { confirmAction } from '../lib/confirm';
-import { categoryOf } from '../data/categories';
+import { buildHtmlReport, buildTextReport } from '../lib/report';
+import { buildBackup } from '../lib/backup';
+import { fileSafe, shareMessage, sharePdf, shareTextFile } from '../lib/files';
+import { notify } from '../lib/confirm';
 import { colors } from '../theme/colors';
 import { font, radii, spacing } from '../theme/tokens';
-import type { Expense, Group } from '../types';
+import { ExpensesTab } from './group/ExpensesTab';
+import { BalancesTab } from './group/BalancesTab';
+import { SettleTab } from './group/SettleTab';
+import { StatsTab } from './group/StatsTab';
 import type { ScreenProps } from '../navigation/types';
 
-type Tab = 'expenses' | 'balances' | 'settle';
+type Tab = 'expenses' | 'balances' | 'settle' | 'stats';
+
+const SHARE_OPTIONS: SheetOption[] = [
+  {
+    key: 'pdf',
+    icon: 'document-text-outline',
+    title: 'PDF report',
+    body: 'Every expense, balances and who pays whom. Opens on any phone, no app needed.',
+  },
+  {
+    key: 'text',
+    icon: 'logo-whatsapp',
+    title: 'Message (WhatsApp, SMS)',
+    body: 'The same summary as a text message you can paste into the group chat.',
+  },
+  {
+    key: 'file',
+    icon: 'phone-portrait-outline',
+    title: 'Group file for the app',
+    body: 'Friends with Vilarci Split can import it and see the whole group.',
+  },
+];
+
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetail'>) {
   const group = useGroup(route.params.groupId);
   const [tab, setTab] = useState<Tab>('expenses');
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
 
   useLayoutEffect(() => {
     navigation.setOptions({
       title: group?.name ?? '',
       headerRight: () =>
         group ? (
-          <Pressable onPress={() => navigation.navigate('GroupForm', { groupId: group.id })} hitSlop={10}>
-            <Ionicons name="create-outline" size={22} color={colors.white} />
-          </Pressable>
+          <View style={styles.headerIcons}>
+            <Pressable onPress={() => setSheetOpen(true)} hitSlop={10} accessibilityLabel="Share">
+              <Ionicons name="share-social-outline" size={22} color={colors.white} />
+            </Pressable>
+            <Pressable
+              onPress={() => navigation.navigate('GroupForm', { groupId: group.id })}
+              hitSlop={10}
+              accessibilityLabel="Edit group"
+            >
+              <Ionicons name="create-outline" size={22} color={colors.white} />
+            </Pressable>
+          </View>
         ) : null,
     });
   }, [navigation, group]);
@@ -60,6 +86,27 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
   const names = Object.fromEntries(group.members.map((m) => [m.id, m.name]));
   const total = groupTotal(group);
 
+  const closeSheet = async () => {
+    setSheetOpen(false);
+    // Let the modal finish sliding away so iOS can present the share sheet.
+    if (Platform.OS === 'ios') await wait(450);
+  };
+
+  const share = async (key: string) => {
+    setBusy(key);
+    const base = fileSafe(group.name);
+    try {
+      if (key === 'pdf') await sharePdf(`${base}-expenses.pdf`, buildHtmlReport(group), closeSheet);
+      else if (key === 'text') await shareMessage(buildTextReport(group), closeSheet);
+      else await shareTextFile(`${base}.vilarci.json`, buildBackup([group]), 'application/json', closeSheet);
+      setSheetOpen(false);
+    } catch (e) {
+      notify("Couldn't share", e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
     <ScreenContainer>
       <View style={styles.top}>
@@ -76,9 +123,10 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
         </View>
         <Segmented
           options={[
-            { key: 'expenses', label: `Expenses (${group.expenses.length})` },
+            { key: 'expenses', label: 'Expenses' },
             { key: 'balances', label: 'Balances' },
-            { key: 'settle', label: transfers.length ? `Settle (${transfers.length})` : 'Settle up' },
+            { key: 'settle', label: transfers.length ? `Settle (${transfers.length})` : 'Settle' },
+            { key: 'stats', label: 'Stats' },
           ]}
           value={tab}
           onChange={setTab}
@@ -93,225 +141,32 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
         />
       ) : tab === 'balances' ? (
         <BalancesTab balances={balances} names={names} />
+      ) : tab === 'settle' ? (
+        <SettleTab group={group} transfers={transfers} names={names} onShare={() => setSheetOpen(true)} />
       ) : (
-        <SettleTab group={group} transfers={transfers} names={names} />
+        <StatsTab group={group} balances={balances} names={names} />
       )}
 
       {tab === 'expenses' ? (
         <Fab label="Add expense" onPress={() => navigation.navigate('ExpenseForm', { groupId: group.id })} />
       ) : null}
+
+      <ActionSheet
+        visible={sheetOpen}
+        title="Send to someone"
+        subtitle={`Share "${group.name}" with people who don't have the app.`}
+        options={SHARE_OPTIONS}
+        busy={busy}
+        onPick={share}
+        onClose={() => setSheetOpen(false)}
+      />
     </ScreenContainer>
-  );
-}
-
-function ExpensesTab({
-  group,
-  names,
-  onOpen,
-}: {
-  group: Group;
-  names: Record<string, string>;
-  onOpen: (e: Expense) => void;
-}) {
-  const sections = useMemo(() => {
-    const byDay = new Map<string, Expense[]>();
-    for (const e of sortExpenses(group.expenses)) byDay.set(e.date, [...(byDay.get(e.date) ?? []), e]);
-    return [...byDay.entries()].map(([date, data]) => ({
-      date,
-      total: data.reduce((s, e) => s + e.amount, 0),
-      data,
-    }));
-  }, [group.expenses]);
-  return (
-    <SectionList
-      sections={sections}
-      keyExtractor={(e) => e.id}
-      contentContainerStyle={styles.list}
-      stickySectionHeadersEnabled={false}
-      renderSectionHeader={({ section }) => (
-        <View style={styles.dayHead}>
-          <Text style={styles.dayLabel}>{dayLabel(section.date)}</Text>
-          <Text style={styles.dayTotal}>{money(section.total)}</Text>
-        </View>
-      )}
-      ListEmptyComponent={
-        <EmptyState
-          icon="receipt-outline"
-          title="No expenses yet"
-          body="Add what each person paid for — travel, food, rice, a boat ride for just 3 of you — and pick who it's for."
-        />
-      }
-      renderItem={({ item }) => {
-        const cat = categoryOf(item.category);
-        return (
-          <Pressable onPress={() => onOpen(item)} style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
-            <View style={styles.catIcon}>
-              <Ionicons name={cat.icon} size={20} color={colors.primary} />
-            </View>
-            <View style={styles.rowBody}>
-              <Text style={styles.rowTitle} numberOfLines={1}>
-                {item.title}
-              </Text>
-              <Text style={styles.rowMeta} numberOfLines={1}>
-                {payerText(item, names)} paid · {splitShort(item, group.members.length)}
-              </Text>
-            </View>
-            <View style={styles.rowRight}>
-              <Text style={styles.rowAmount}>{money(item.amount)}</Text>
-              {item.note ? <Ionicons name="document-text-outline" size={13} color={colors.textSecondary} /> : null}
-            </View>
-          </Pressable>
-        );
-      }}
-    />
-  );
-}
-
-function BalancesTab({ balances, names }: { balances: MemberBalance[]; names: Record<string, string> }) {
-  const sorted = [...balances].sort((a, b) => b.net - a.net);
-  return (
-    <ScrollView contentContainerStyle={styles.list}>
-      <Text style={styles.explain}>
-        "Paid" is what each person spent for the group. "Share" is their fair part of the expenses they were in.
-      </Text>
-      {sorted.map((b) => (
-        <View key={b.memberId} style={styles.row}>
-          <Avatar name={names[b.memberId]} />
-          <View style={[styles.rowBody, styles.avatarGap]}>
-            <Text style={styles.rowTitle}>{names[b.memberId]}</Text>
-            <Text style={styles.rowMeta}>
-              Paid {money(b.paid)} · Share {money(b.share)}
-              {b.sent ? ` · Sent ${money(b.sent)}` : ''}
-              {b.received ? ` · Got ${money(b.received)}` : ''}
-            </Text>
-          </View>
-          <View style={styles.rowRight}>
-            {isSettled(b.net) ? (
-              <Text style={styles.settled}>settled</Text>
-            ) : (
-              <>
-                <Text style={[styles.rowAmount, b.net > 0 ? styles.pos : styles.neg]}>{money(Math.abs(b.net))}</Text>
-                <Text style={[styles.rowDate, b.net > 0 ? styles.pos : styles.neg]}>{b.net > 0 ? 'gets back' : 'owes'}</Text>
-              </>
-            )}
-          </View>
-        </View>
-      ))}
-    </ScrollView>
-  );
-}
-
-function SettleTab({
-  group,
-  transfers,
-  names,
-}: {
-  group: Group;
-  transfers: Transfer[];
-  names: Record<string, string>;
-}) {
-  const { addPayment, deletePayment } = useGroups();
-
-  const share = () => {
-    const total = groupTotal(group);
-    const lines = [
-      `${group.name} — expense summary`,
-      `Total spent: ${money(total)} by ${plural(group.members.length, 'person')}`,
-      '',
-      ...group.expenses
-        .slice()
-        .sort((a, b) => a.createdAt - b.createdAt)
-        .map((e) => {
-          const shares = expenseShares(e);
-          const who = e.splitAmong.length === group.members.length ? 'everyone' : e.splitAmong.map((id) => names[id]).join(', ');
-          return `• ${e.title}: ${money(e.amount)} paid by ${payerText(e, names)} for ${who}${
-            e.splitMode === 'exact' ? ` (${e.splitAmong.map((id) => `${names[id]} ${money(shares[id])}`).join(', ')})` : ''
-          }`;
-        }),
-      '',
-      transfers.length ? 'To settle up:' : 'Everyone is settled up 🎉',
-      ...transfers.map((t) => `→ ${names[t.from]} pays ${names[t.to]} ${money(t.amount)}`),
-    ];
-    Share.share({ message: lines.join('\n') }).catch(() => {});
-  };
-
-  return (
-    <ScrollView contentContainerStyle={styles.list}>
-      {transfers.length === 0 ? (
-        <EmptyState
-          icon="checkmark-done-circle-outline"
-          title={group.expenses.length ? 'All settled up' : 'Nothing to settle yet'}
-          body={
-            group.expenses.length
-              ? 'Everyone has paid their fair share.'
-              : 'Add some expenses and this tab will show who should pay whom.'
-          }
-        />
-      ) : (
-        <>
-          <Text style={styles.explain}>
-            The fewest payments that make everyone even. Tap "Paid" once the money has actually been sent.
-          </Text>
-          {transfers.map((t) => (
-            <View key={`${t.from}-${t.to}`} style={styles.transfer}>
-              <View style={styles.transferPeople}>
-                <Avatar name={names[t.from]} size={32} />
-                <View style={styles.transferText}>
-                  <Text style={styles.transferLine} numberOfLines={2}>
-                    <Text style={styles.bold}>{names[t.from]}</Text> pays <Text style={styles.bold}>{names[t.to]}</Text>
-                  </Text>
-                  <Text style={styles.transferAmount}>{money(t.amount)}</Text>
-                </View>
-              </View>
-              <Pressable
-                onPress={() => addPayment(group.id, t)}
-                style={({ pressed }) => [styles.paidBtn, pressed && styles.pressed]}
-              >
-                <Ionicons name="checkmark" size={16} color={colors.white} />
-                <Text style={styles.paidText}>Paid</Text>
-              </Pressable>
-            </View>
-          ))}
-        </>
-      )}
-
-      {group.expenses.length ? (
-        <Pressable onPress={share} style={({ pressed }) => [styles.shareBtn, pressed && styles.pressed]}>
-          <Ionicons name="share-social-outline" size={18} color={colors.primary} />
-          <Text style={styles.shareText}>Share summary</Text>
-        </Pressable>
-      ) : null}
-
-      {group.payments.length ? (
-        <View style={styles.history}>
-          <SectionLabel>Payments recorded</SectionLabel>
-          {group.payments.map((p) => (
-            <View key={p.id} style={styles.payment}>
-              <Ionicons name="swap-horizontal" size={18} color={colors.success} />
-              <Text style={styles.paymentText} numberOfLines={2}>
-                {names[p.from]} paid {names[p.to]} <Text style={styles.bold}>{money(p.amount)}</Text>
-                <Text style={styles.rowDate}> · {shortDate(p.createdAt)}</Text>
-              </Text>
-              <Pressable
-                hitSlop={10}
-                onPress={() =>
-                  confirmAction('Undo payment?', `${names[p.from]} → ${names[p.to]} ${money(p.amount)}`, 'Undo', () =>
-                    deletePayment(group.id, p.id),
-                  )
-                }
-              >
-                <Ionicons name="arrow-undo-outline" size={18} color={colors.textSecondary} />
-              </Pressable>
-            </View>
-          ))}
-        </View>
-      ) : null}
-    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   missing: { textAlign: 'center', marginTop: spacing(16), color: colors.textSecondary },
+  headerIcons: { flexDirection: 'row', gap: spacing(5), alignItems: 'center' },
   top: { paddingHorizontal: spacing(4), paddingTop: spacing(4), paddingBottom: spacing(2) },
   summary: {
     flexDirection: 'row',
@@ -324,94 +179,4 @@ const styles = StyleSheet.create({
   summaryLabel: { color: colors.white, opacity: 0.75, fontSize: font.xs + 1, fontWeight: '600', letterSpacing: 0.4 },
   summaryValue: { color: colors.white, fontSize: font.xxl, fontWeight: '800', marginTop: 2 },
   divider: { width: 1, backgroundColor: 'rgba(255,255,255,0.25)' },
-  list: { padding: spacing(4), paddingBottom: spacing(28) },
-  dayHead: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: spacing(2),
-    marginBottom: spacing(2),
-    paddingHorizontal: spacing(1),
-  },
-  dayLabel: { fontSize: font.sm, fontWeight: '700', color: colors.textSecondary },
-  dayTotal: { fontSize: font.sm, fontWeight: '600', color: colors.textSecondary },
-  explain: { fontSize: font.sm, color: colors.textSecondary, marginBottom: spacing(3), lineHeight: 18 },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: radii.md,
-    padding: spacing(3.5),
-    marginBottom: spacing(2.5),
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  pressed: { opacity: 0.8 },
-  catIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: radii.md,
-    backgroundColor: colors.surfaceAlt,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: spacing(3),
-  },
-  avatarGap: { marginLeft: spacing(3) },
-  rowBody: { flex: 1 },
-  rowTitle: { fontSize: font.md + 1, fontWeight: '700', color: colors.textPrimary },
-  rowMeta: { fontSize: font.sm, color: colors.textSecondary, marginTop: 2 },
-  rowRight: { alignItems: 'flex-end', marginLeft: spacing(2) },
-  rowAmount: { fontSize: font.md + 1, fontWeight: '800', color: colors.textPrimary },
-  rowDate: { fontSize: font.xs, color: colors.textSecondary, marginTop: 2 },
-  pos: { color: colors.success },
-  neg: { color: colors.danger },
-  settled: { fontSize: font.sm, fontWeight: '700', color: colors.textSecondary },
-  transfer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderRadius: radii.md,
-    padding: spacing(3.5),
-    marginBottom: spacing(2.5),
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  transferPeople: { flex: 1, flexDirection: 'row', alignItems: 'center' },
-  transferText: { flex: 1, marginLeft: spacing(3) },
-  transferLine: { fontSize: font.md, color: colors.textPrimary },
-  transferAmount: { fontSize: font.lg, fontWeight: '800', color: colors.primary, marginTop: 2 },
-  bold: { fontWeight: '700' },
-  paidBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing(1),
-    backgroundColor: colors.success,
-    paddingHorizontal: spacing(3.5),
-    paddingVertical: spacing(2),
-    borderRadius: radii.pill,
-    marginLeft: spacing(2),
-  },
-  paidText: { color: colors.white, fontWeight: '700', fontSize: font.sm + 1 },
-  shareBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing(2),
-    borderWidth: 1.5,
-    borderColor: colors.primary,
-    borderRadius: radii.lg,
-    paddingVertical: spacing(3.5),
-    marginTop: spacing(3),
-    backgroundColor: colors.surface,
-  },
-  shareText: { color: colors.primary, fontWeight: '700', fontSize: font.md },
-  history: { marginTop: spacing(8) },
-  payment: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing(3),
-    paddingVertical: spacing(3),
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-  },
-  paymentText: { flex: 1, fontSize: font.sm + 1, color: colors.textPrimary },
 });
