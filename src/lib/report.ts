@@ -12,6 +12,7 @@ import { payerLong, splitLong } from './describe';
 import { money } from './money';
 import { longDate, plural } from './format';
 import { categoryOf, groupKindOf } from '../data/categories';
+import { LOGO_DATA_URI } from '../data/logo';
 
 // Reports for people who don't have the app: a chat message and a PDF.
 // Both are built from the same numbers the app shows.
@@ -154,7 +155,8 @@ export function buildHtmlReport(group: Group, now = new Date()) {
 <style>
   * { box-sizing: border-box; }
   body { font-family: -apple-system, Roboto, 'Segoe UI', Arial, sans-serif; color: #241012; margin: 0; padding: 28px; font-size: 12px; }
-  header { background: #7A1F2B; color: #fff; border-radius: 14px; padding: 20px 22px; }
+  header { background: #7A1F2B; color: #fff; border-radius: 14px; padding: 18px 22px; display: flex; align-items: center; gap: 16px; }
+  header .logo { width: 52px; height: 52px; border-radius: 12px; border: 1.5px solid rgba(255,255,255,.35); flex-shrink: 0; }
   header h1 { margin: 0 0 4px; font-size: 22px; }
   header .sub { opacity: .8; }
   .tiles { display: flex; gap: 10px; margin: 16px 0 6px; }
@@ -179,8 +181,11 @@ export function buildHtmlReport(group: Group, now = new Date()) {
 </style></head>
 <body>
   <header>
-    <h1>${esc(group.name)}</h1>
-    <div class="sub">${esc(groupKindOf(group.kind).label)} · ${plural(group.members.length, 'person')}${d.range ? ` · ${esc(d.range)}` : ''}</div>
+    <img class="logo" src="${LOGO_DATA_URI}" alt="Vilarci">
+    <div>
+      <h1>${esc(group.name)}</h1>
+      <div class="sub">${esc(groupKindOf(group.kind).label)} · ${plural(group.members.length, 'person')}${d.range ? ` · ${esc(d.range)}` : ''}</div>
+    </div>
   </header>
   <div class="tiles">
     <div class="tile"><div class="k">Total spent</div><div class="v">${money(d.total)}</div></div>

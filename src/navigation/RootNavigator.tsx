@@ -5,6 +5,7 @@ import { GroupFormScreen } from '../screens/GroupFormScreen';
 import { GroupDetailScreen } from '../screens/GroupDetailScreen';
 import { ExpenseFormScreen } from '../screens/ExpenseFormScreen';
 import { BackupScreen } from '../screens/BackupScreen';
+import { BrandTitle } from '../components/BrandTitle';
 import { colors } from '../theme/colors';
 import type { RootStackParamList } from './types';
 
@@ -22,7 +23,11 @@ export function RootNavigator() {
           contentStyle: { backgroundColor: colors.background },
         }}
       >
-        <Stack.Screen name="Groups" component={GroupsScreen} options={{ title: 'Vilarci Split' }} />
+        <Stack.Screen
+          name="Groups"
+          component={GroupsScreen}
+          options={{ title: 'Vilarci Split', headerTitle: () => <BrandTitle /> }}
+        />
         <Stack.Screen
           name="GroupForm"
           component={GroupFormScreen}

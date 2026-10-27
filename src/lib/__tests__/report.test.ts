@@ -49,4 +49,8 @@ describe('html report', () => {
     assert.ok(html.includes('₹4,500'));
     assert.ok(html.includes('<b>Person C</b> pays <b>Person A</b>'));
   });
+
+  it('embeds the logo so the PDF needs no network or asset access', () => {
+    assert.match(buildHtmlReport(g()), /<img class="logo" src="data:image\/png;base64,[A-Za-z0-9+/=]{1000,}"/);
+  });
 });

@@ -75,7 +75,8 @@ export function GroupsScreen({ navigation }: ScreenProps<'Groups'>) {
           ) : null
         }
         ListEmptyComponent={
-          <>
+          // A View, not a fragment: FlatList passes onLayout to this element.
+          <View>
             <EmptyState
               icon="wallet-outline"
               title="No groups yet"
@@ -84,7 +85,7 @@ export function GroupsScreen({ navigation }: ScreenProps<'Groups'>) {
             <Pressable onPress={() => navigation.navigate('Backup')} hitSlop={8}>
               <Text style={styles.importLink}>Have a backup or a group file? Import it</Text>
             </Pressable>
-          </>
+          </View>
         }
         renderItem={({ item }) => (
           <GroupCard group={item} onPress={() => navigation.navigate('GroupDetail', { groupId: item.id })} />
