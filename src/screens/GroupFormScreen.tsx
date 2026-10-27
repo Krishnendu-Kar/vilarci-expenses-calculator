@@ -23,7 +23,7 @@ export function GroupFormScreen({ navigation, route }: ScreenProps<'GroupForm'>)
   const { createGroup, updateGroup, deleteGroup } = useGroups();
 
   const [name, setName] = useState(existing?.name ?? '');
-  const [kind, setKind] = useState<GroupKind>(existing?.kind ?? 'trip');
+  const [kind, setKind] = useState<GroupKind>(existing?.kind ?? route.params?.kind ?? 'trip');
   const [members, setMembers] = useState<Member[]>(existing?.members ?? []);
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);

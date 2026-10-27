@@ -1,11 +1,12 @@
-import React, { useLayoutEffect, useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { Segmented } from '../components/Segmented';
 import { Fab } from '../components/Fab';
 import { ActionSheet, type SheetOption } from '../components/ActionSheet';
-import { useGroup } from '../context/GroupsContext';
+import { SwipeView } from '../components/SwipeView';
+import { useGroup, useGroups } from '../context/GroupsContext';
 import { computeBalances, groupTotal, suggestTransfers } from '../lib/split';
 import { money } from '../lib/money';
 import { buildHtmlReport, buildTextReport } from '../lib/report';
@@ -15,12 +16,14 @@ import { notify } from '../lib/confirm';
 import { colors } from '../theme/colors';
 import { font, radii, spacing } from '../theme/tokens';
 import { ExpensesTab } from './group/ExpensesTab';
-import { BalancesTab } from './group/BalancesTab';
+import { MembersTab } from './group/MembersTab';
 import { SettleTab } from './group/SettleTab';
 import { StatsTab } from './group/StatsTab';
 import type { ScreenProps } from '../navigation/types';
 
-type Tab = 'expenses' | 'balances' | 'settle' | 'stats';
+type Tab = 'expenses' | 'members' | 'settle' | 'stats';
+
+const TABS: Tab[] = ['expenses', 'members', 'settle', 'stats'];
 
 const SHARE_OPTIONS: SheetOption[] = [
   {
@@ -47,9 +50,15 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetail'>) {
   const group = useGroup(route.params.groupId);
+  const { recordVisit } = useGroups();
   const [tab, setTab] = useState<Tab>('expenses');
   const [sheetOpen, setSheetOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+
+  // Feeds the home screen's "Most visited" filter.
+  useEffect(() => {
+    recordVisit(route.params.groupId);
+  }, [recordVisit, route.params.groupId]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -124,7 +133,7 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
         <Segmented
           options={[
             { key: 'expenses', label: 'Expenses' },
-            { key: 'balances', label: 'Balances' },
+            { key: 'members', label: 'Members' },
             { key: 'settle', label: transfers.length ? `Settle (${transfers.length})` : 'Settle' },
             { key: 'stats', label: 'Stats' },
           ]}
@@ -133,19 +142,21 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
         />
       </View>
 
-      {tab === 'expenses' ? (
-        <ExpensesTab
-          group={group}
-          names={names}
-          onOpen={(e) => navigation.navigate('ExpenseForm', { groupId: group.id, expenseId: e.id })}
-        />
-      ) : tab === 'balances' ? (
-        <BalancesTab balances={balances} names={names} />
-      ) : tab === 'settle' ? (
-        <SettleTab group={group} transfers={transfers} names={names} onShare={() => setSheetOpen(true)} />
-      ) : (
-        <StatsTab group={group} balances={balances} names={names} />
-      )}
+      <SwipeView index={TABS.indexOf(tab)} count={TABS.length} onIndexChange={(i) => setTab(TABS[i])}>
+        {tab === 'expenses' ? (
+          <ExpensesTab
+            group={group}
+            names={names}
+            onOpen={(e) => navigation.navigate('ExpenseForm', { groupId: group.id, expenseId: e.id })}
+          />
+        ) : tab === 'members' ? (
+          <MembersTab balances={balances} names={names} />
+        ) : tab === 'settle' ? (
+          <SettleTab group={group} transfers={transfers} names={names} onShare={() => setSheetOpen(true)} />
+        ) : (
+          <StatsTab group={group} balances={balances} names={names} />
+        )}
+      </SwipeView>
 
       {tab === 'expenses' ? (
         <Fab label="Add expense" onPress={() => navigation.navigate('ExpenseForm', { groupId: group.id })} />

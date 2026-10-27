@@ -8,6 +8,7 @@ import { SectionLabel } from '../components/SectionLabel';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { DateField } from '../components/DateField';
 import { PersonAmountRow } from '../components/PersonAmountRow';
+import { SwipeView } from '../components/SwipeView';
 import { useGroup, useGroups } from '../context/GroupsContext';
 import { allocate } from '../lib/split';
 import { money, paiseToInput, toPaise } from '../lib/money';
@@ -274,69 +275,77 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
         {/* ---------- Split ---------- */}
         <SectionLabel>Split</SectionLabel>
         <Segmented options={SPLIT_OPTIONS} value={mode} onChange={changeMode} />
-        <Text style={styles.help}>{SPLIT_HELP[mode]}</Text>
+        {/* Swipe left/right here to change the split mode. */}
+        <SwipeView
+          index={SPLIT_OPTIONS.findIndex((o) => o.key === mode)}
+          count={SPLIT_OPTIONS.length}
+          onIndexChange={(i) => changeMode(SPLIT_OPTIONS[i].key)}
+          fill={false}
+        >
+          <Text style={styles.help}>{SPLIT_HELP[mode]}</Text>
 
-        {mode === 'equal' ? (
-          <View style={styles.box}>
-            <View style={styles.boxHead}>
-              <Text style={styles.boxInfo}>
-                {splitAmong.length
-                  ? `${splitAmong.length} of ${members.length} people${amount ? ` · ${uneven ? '~' : ''}${money(perHead)} each` : ''}`
-                  : 'Nobody selected'}
-              </Text>
-              <Pressable onPress={() => setSelected(allSelected ? [] : allIds)} hitSlop={8}>
-                <Text style={styles.link}>{allSelected ? 'Clear' : 'Everyone'}</Text>
-              </Pressable>
+          {mode === 'equal' ? (
+            <View style={styles.box}>
+              <View style={styles.boxHead}>
+                <Text style={styles.boxInfo}>
+                  {splitAmong.length
+                    ? `${splitAmong.length} of ${members.length} people${amount ? ` · ${uneven ? '~' : ''}${money(perHead)} each` : ''}`
+                    : 'Nobody selected'}
+                </Text>
+                <Pressable onPress={() => setSelected(allSelected ? [] : allIds)} hitSlop={8}>
+                  <Text style={styles.link}>{allSelected ? 'Clear' : 'Everyone'}</Text>
+                </Pressable>
+              </View>
+              <View style={styles.chipsTight}>
+                {members.map((m) => (
+                  <Chip
+                    key={m.id}
+                    label={m.name}
+                    selected={selected.includes(m.id)}
+                    onPress={() =>
+                      setSelected((s) => (s.includes(m.id) ? s.filter((x) => x !== m.id) : [...s, m.id]))
+                    }
+                  />
+                ))}
+              </View>
             </View>
-            <View style={styles.chipsTight}>
+          ) : (
+            <View style={styles.box}>
+              {mode !== 'shares' ? (
+                <Pressable onPress={fillEvenly} hitSlop={8} style={styles.fill}>
+                  <Text style={styles.link}>Fill evenly</Text>
+                </Pressable>
+              ) : null}
               {members.map((m) => (
-                <Chip
+                <PersonAmountRow
                   key={m.id}
-                  label={m.name}
-                  selected={selected.includes(m.id)}
-                  onPress={() =>
-                    setSelected((s) => (s.includes(m.id) ? s.filter((x) => x !== m.id) : [...s, m.id]))
+                  name={m.name}
+                  value={customTexts[m.id] ?? ''}
+                  onChangeText={(t) => setValue(mode, m.id, t)}
+                  prefix={mode === 'exact' ? '₹' : undefined}
+                  suffix={mode === 'percent' ? '%' : mode === 'shares' ? 'x' : undefined}
+                  integer={mode === 'shares'}
+                  hint={
+                    mode === 'shares' && shareAmounts[m.id]
+                      ? money(shareAmounts[m.id])
+                      : mode === 'percent' && pctAmounts[m.id]
+                        ? money(pctAmounts[m.id])
+                        : undefined
                   }
                 />
               ))}
+              {mode === 'exact' ? <Remaining assigned={exactSum} total={amount} format={money} /> : null}
+              {mode === 'percent' ? <Remaining assigned={pctSum} total={10000} format={(bp) => `${bpToInput(bp)}%`} /> : null}
+              {mode === 'shares' ? (
+                <Text style={[styles.remaining, styles.muted]}>
+                  {totalShares
+                    ? `${totalShares} shares${amount ? ` · ${money(Math.floor(amount / totalShares))} per share` : ''}`
+                    : 'Give someone at least 1 share'}
+                </Text>
+              ) : null}
             </View>
-          </View>
-        ) : (
-          <View style={styles.box}>
-            {mode !== 'shares' ? (
-              <Pressable onPress={fillEvenly} hitSlop={8} style={styles.fill}>
-                <Text style={styles.link}>Fill evenly</Text>
-              </Pressable>
-            ) : null}
-            {members.map((m) => (
-              <PersonAmountRow
-                key={m.id}
-                name={m.name}
-                value={customTexts[m.id] ?? ''}
-                onChangeText={(t) => setValue(mode, m.id, t)}
-                prefix={mode === 'exact' ? '₹' : undefined}
-                suffix={mode === 'percent' ? '%' : mode === 'shares' ? 'x' : undefined}
-                integer={mode === 'shares'}
-                hint={
-                  mode === 'shares' && shareAmounts[m.id]
-                    ? money(shareAmounts[m.id])
-                    : mode === 'percent' && pctAmounts[m.id]
-                      ? money(pctAmounts[m.id])
-                      : undefined
-                }
-              />
-            ))}
-            {mode === 'exact' ? <Remaining assigned={exactSum} total={amount} format={money} /> : null}
-            {mode === 'percent' ? <Remaining assigned={pctSum} total={10000} format={(bp) => `${bpToInput(bp)}%`} /> : null}
-            {mode === 'shares' ? (
-              <Text style={[styles.remaining, styles.muted]}>
-                {totalShares
-                  ? `${totalShares} shares${amount ? ` · ${money(Math.floor(amount / totalShares))} per share` : ''}`
-                  : 'Give someone at least 1 share'}
-              </Text>
-            ) : null}
-          </View>
-        )}
+          )}
+        </SwipeView>
 
         <Input
           label="Note (optional)"

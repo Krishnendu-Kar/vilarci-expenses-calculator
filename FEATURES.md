@@ -19,6 +19,9 @@ A group is a set of people who share costs, such as "Goa trip" or "Room 204 mess
 | Duplicate names blocked | Two people can't have the same name (ignoring case), so nobody gets mixed up. |
 | Edit or delete a group | Use the pencil icon in the group's header. Deleting asks for confirmation first. |
 | Group list | Groups are listed with the most recently used first. Each card shows the number of people and expenses, the total spent, and a badge: **"N payments to settle"** or **"All settled"**. |
+| Filter bar | A WhatsApp-style row of filters above the list: **All · Trip · Hostel · Other · Most visited**. Tap one, or **swipe left/right** on the list to move between them. |
+| Most visited | Groups you open most often, most opened first. Each card shows how many times it was opened. The open counts stay on this phone and are never put in backups or shared files. |
+| New group from a filter | Tapping **New group** while Trip, Hostel or Other is selected starts the new group with that type. |
 
 ---
 
@@ -47,6 +50,8 @@ A group is a set of people who share costs, such as "Goa trip" or "Room 204 mess
 | **Shares** | Some people had bigger portions. Everyone starts with 1 share. | Dinner ₹3,000, A ate double (2 shares) → A ₹857.15, others ₹428.57 |
 | **%** | Split by percentage. Must add up to 100%. *Fill evenly* is available here too. | Rent: A 50%, B 25%, C 25% |
 
+**Swipe left/right** on the split area to switch between Equally, ₹ Exact, Shares and %.
+
 As you type, the form shows the result live: the amount per person, what each share works out to in rupees, and how much is left (or how much too much) has been assigned.
 
 **Fair rounding:** when an amount doesn't divide evenly (₹100 ÷ 3), the leftover paise go one at a time to the first people, so the parts always add up to exactly the total.
@@ -55,14 +60,14 @@ As you type, the form shows the result live: the amount per person, what each sh
 
 ## 3. Group screen
 
-The top of the screen always shows the **total spent** and the **average per person**. Below that are four tabs:
+The top of the screen always shows the **total spent** and the **average per person**. Below that are four tabs. Tap one, or **swipe left/right** to move between them:
 
 ### Expenses
 - Grouped by day (**Today**, **Yesterday**, **Sun, 25 Oct**…) with each day's total.
 - Each row shows the title, category icon, who paid (*"Person A & Person B paid"*), how it was split (*"split with everyone"*, *"split 3 ways"*, *"by shares"*…) and the amount.
 - An **Add expense** button floats at the bottom.
 
-### Balances
+### Members
 - One row per person: **Paid** (what they spent for the group), **Share** (their fair part), plus any settle-up money they've **Sent** or **Got**.
 - The result is shown as **"gets back ₹X"** (green), **"owes ₹X"** (red), or **"settled"**.
 
@@ -94,15 +99,23 @@ On a phone these open the normal share menu (WhatsApp, Gmail, Drive, Bluetooth�
 
 ---
 
-## 5. Backup & restore
+## 5. Settings: export, import and about
 
-Version 1 keeps data only on the phone, so if the app is uninstalled or you change phones, the data is gone. The backup tools fix that. Open them with the **cloud icon** on the home screen.
+Open **Settings** with the gear icon at the top right of the home screen. It's a simple menu: each option opens its own page, and the **app version** is shown at the very bottom.
+
+| Option | What it does |
+|---|---|
+| **Export data** | Opens the export page. |
+| **Import data** | Opens the import page. |
+| **About** | App logo, name, version, what the app does, and a link to vilarci.in. |
+
+Version 1 keeps data only on the phone, so if the app is uninstalled or you change phones, the data is gone. Export and Import fix that:
 
 | Feature | Details |
 |---|---|
-| **Export backup** | Saves *all* groups into one file named like `vilarci-split-backup-2026-10-27.json` and opens the share menu, so you can keep it in Google Drive, email it, or send it to yourself on WhatsApp. |
-| **Last backup date** | Shown on the backup screen. It turns red if you've never backed up or the last backup is more than 2 weeks old. |
-| **Reminder** | A banner on the home screen appears once you have a few expenses and haven't backed up in 2 weeks. Tap it to go to the backup screen. |
+| **Export** | Saves *all* groups into one file named like `vilarci-split-backup-2026-10-27.json` and opens the share menu, so you can keep it in Google Drive, email it, or send it to yourself on WhatsApp. |
+| **Last export date** | Shown on the Export page. It turns red if you've never backed up or the last backup is more than 2 weeks old. |
+| **Reminder** | A banner on the home screen appears once you have a few expenses and haven't backed up in 2 weeks. Tap it to go straight to Export. |
 | **Import** | Pick a backup or a group file a friend sent. Nothing changes until you confirm. |
 | **Import preview** | Lists each group in the file as **New** (it will be added) or **Updates your copy** (it will replace the group already on your phone). If your copy was changed *more recently* than the file, you get a warning. |
 | **Safe with bad files** | Picking the wrong file shows a clear message ("This isn't a Vilarci Split backup…"). Broken entries inside a file are skipped and counted, never loaded halfway. Files from a newer app version ask you to update first. |

@@ -4,7 +4,10 @@ import { GroupsScreen } from '../screens/GroupsScreen';
 import { GroupFormScreen } from '../screens/GroupFormScreen';
 import { GroupDetailScreen } from '../screens/GroupDetailScreen';
 import { ExpenseFormScreen } from '../screens/ExpenseFormScreen';
-import { BackupScreen } from '../screens/BackupScreen';
+import { SettingsScreen } from '../screens/SettingsScreen';
+import { ExportScreen } from '../screens/ExportScreen';
+import { ImportScreen } from '../screens/ImportScreen';
+import { AboutScreen } from '../screens/AboutScreen';
 import { BrandTitle } from '../components/BrandTitle';
 import { colors } from '../theme/colors';
 import type { RootStackParamList } from './types';
@@ -39,7 +42,10 @@ export function RootNavigator() {
           component={ExpenseFormScreen}
           options={({ route }) => ({ title: route.params.expenseId ? 'Edit expense' : 'Add expense' })}
         />
-        <Stack.Screen name="Backup" component={BackupScreen} options={{ title: 'Backup & restore' }} />
+        <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: 'Settings' }} />
+        <Stack.Screen name="Export" component={ExportScreen} options={{ title: 'Export data' }} />
+        <Stack.Screen name="Import" component={ImportScreen} options={{ title: 'Import data' }} />
+        <Stack.Screen name="About" component={AboutScreen} options={{ title: 'About' }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

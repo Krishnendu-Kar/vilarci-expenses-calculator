@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { Expense, Group, GroupKind, Member, Payment } from '../types';
-import { loadGroups, saveGroups } from '../lib/storage';
+import { loadGroups, loadVisits, saveGroups, saveVisits } from '../lib/storage';
+import { addVisit, pruneVisits, type Visits } from '../lib/groupFilters';
 import { newId } from '../lib/id';
 import { mergeGroups } from '../lib/backup';
 
@@ -22,6 +23,9 @@ interface GroupsContextValue {
   deletePayment: (groupId: string, paymentId: string) => void;
   /** Adds imported groups; ones with the same id replace the local copy. */
   importGroups: (incoming: Group[]) => void;
+  /** How often each group was opened on this phone (for "Most visited"). */
+  visits: Visits;
+  recordVisit: (groupId: string) => void;
 }
 
 const GroupsContext = createContext<GroupsContextValue | null>(null);
@@ -31,6 +35,8 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   // If the stored data can't be read, don't overwrite it with an empty list.
   const loadFailed = useRef(false);
+  const [visits, setVisits] = useState<Visits>({});
+  const [visitsReady, setVisitsReady] = useState(false);
 
   useEffect(() => {
     loadGroups()
@@ -40,12 +46,26 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
         console.warn('Could not load saved groups', e);
       })
       .finally(() => setReady(true));
+    loadVisits()
+      .then(setVisits)
+      .catch((e) => console.warn('Could not load visit counts', e))
+      .finally(() => setVisitsReady(true));
   }, []);
 
   useEffect(() => {
     if (!ready || loadFailed.current) return;
     saveGroups(groups).catch((e) => console.warn('Could not save groups', e));
   }, [groups, ready]);
+
+  // Pruned on save, so deleted groups drop out of the counts.
+  useEffect(() => {
+    if (!ready || !visitsReady || loadFailed.current) return;
+    saveVisits(pruneVisits(visits, groups)).catch((e) => console.warn('Could not save visit counts', e));
+  }, [visits, groups, ready, visitsReady]);
+
+  const recordVisit = useCallback((groupId: string) => {
+    setVisits((v) => addVisit(v, groupId));
+  }, []);
 
   const editGroup = useCallback((id: string, fn: (g: Group) => Group) => {
     setGroups((gs) => gs.map((g) => (g.id === id ? { ...fn(g), updatedAt: Date.now() } : g)));
@@ -116,8 +136,23 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
       addPayment,
       deletePayment,
       importGroups,
+      visits,
+      recordVisit,
     }),
-    [groups, ready, createGroup, updateGroup, deleteGroup, saveExpense, deleteExpense, addPayment, deletePayment, importGroups],
+    [
+      groups,
+      ready,
+      createGroup,
+      updateGroup,
+      deleteGroup,
+      saveExpense,
+      deleteExpense,
+      addPayment,
+      deletePayment,
+      importGroups,
+      visits,
+      recordVisit,
+    ],
   );
 
   return <GroupsContext.Provider value={value}>{children}</GroupsContext.Provider>;

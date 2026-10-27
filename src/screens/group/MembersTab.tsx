@@ -7,7 +7,8 @@ import { colors } from '../../theme/colors';
 import { font, spacing } from '../../theme/tokens';
 import { tabStyles as t } from './styles';
 
-export function BalancesTab({ balances, names }: { balances: MemberBalance[]; names: Record<string, string> }) {
+/** One row per member: what they paid, their fair share, and what they owe or get back. */
+export function MembersTab({ balances, names }: { balances: MemberBalance[]; names: Record<string, string> }) {
   const sorted = [...balances].sort((a, b) => b.net - a.net);
   return (
     <ScrollView contentContainerStyle={t.list}>

@@ -5,12 +5,15 @@ import { useFocusEffect } from '@react-navigation/native';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { EmptyState } from '../components/EmptyState';
 import { Fab } from '../components/Fab';
+import { FilterBar, type FilterOption } from '../components/FilterBar';
+import { SwipeView } from '../components/SwipeView';
 import { useGroups } from '../context/GroupsContext';
 import { getLastBackup } from '../lib/storage';
 import { computeBalances, groupTotal, suggestTransfers } from '../lib/split';
 import { money } from '../lib/money';
 import { plural } from '../lib/format';
-import { groupKindOf } from '../data/categories';
+import { groupKindOf, type IconName } from '../data/categories';
+import { filterGroups, type GroupFilter } from '../lib/groupFilters';
 import { colors } from '../theme/colors';
 import { font, radii, spacing } from '../theme/tokens';
 import type { Group } from '../types';
@@ -18,16 +21,37 @@ import type { ScreenProps } from '../navigation/types';
 
 const BACKUP_NAG_MS = 14 * 24 * 3600 * 1000;
 
+const FILTERS: FilterOption<GroupFilter>[] = [
+  { key: 'all', label: 'All' },
+  { key: 'trip', label: 'Trip', icon: 'airplane-outline' },
+  { key: 'hostel', label: 'Hostel', icon: 'home-outline' },
+  { key: 'other', label: 'Other', icon: 'people-outline' },
+  { key: 'visited', label: 'Most visited', icon: 'flame-outline' },
+];
+
+const FILTER_EMPTY: Record<Exclude<GroupFilter, 'all'>, { icon: IconName; title: string; body: string }> = {
+  trip: { icon: 'airplane-outline', title: 'No trips yet', body: 'Groups you make with the Trip type show up here.' },
+  hostel: {
+    icon: 'home-outline',
+    title: 'No hostel or flat groups',
+    body: 'Groups you make with the Hostel / Flat type show up here.',
+  },
+  other: { icon: 'people-outline', title: 'No other groups', body: 'Groups you make with the Other type show up here.' },
+  visited: { icon: 'flame-outline', title: 'Nothing here yet', body: 'The groups you open most often will show up here.' },
+};
+
 export function GroupsScreen({ navigation }: ScreenProps<'Groups'>) {
-  const { groups, ready } = useGroups();
-  const sorted = useMemo(() => [...groups].sort((a, b) => b.updatedAt - a.updatedAt), [groups]);
+  const { groups, ready, visits } = useGroups();
+  const [filter, setFilter] = useState<GroupFilter>('all');
+  const visible = useMemo(() => filterGroups(groups, filter, visits), [groups, filter, visits]);
+  const filterIndex = FILTERS.findIndex((f) => f.key === filter);
   const [lastBackup, setLastBackup] = useState<number | null | undefined>(undefined);
 
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <Pressable onPress={() => navigation.navigate('Backup')} hitSlop={10} accessibilityLabel="Backup and restore">
-          <Ionicons name="cloud-upload-outline" size={22} color={colors.white} />
+        <Pressable onPress={() => navigation.navigate('Settings')} hitSlop={10} accessibilityLabel="Settings">
+          <Ionicons name="settings-outline" size={22} color={colors.white} />
         </Pressable>
       ),
     });
@@ -52,51 +76,75 @@ export function GroupsScreen({ navigation }: ScreenProps<'Groups'>) {
     );
   }
 
-  return (
-    <ScreenContainer>
-      <FlatList
-        data={sorted}
-        keyExtractor={(g) => g.id}
-        contentContainerStyle={styles.list}
-        ListHeaderComponent={
-          sorted.length ? (
-            <>
-              {needsBackup ? (
-                <Pressable onPress={() => navigation.navigate('Backup')} style={styles.nag}>
-                  <Ionicons name="cloud-upload-outline" size={20} color={colors.primary} />
-                  <Text style={styles.nagText}>
-                    {lastBackup ? 'No backup in the last 2 weeks.' : 'Not backed up yet.'} Your data is only on this phone. Tap to save a copy.
-                  </Text>
-                  <Ionicons name="chevron-forward" size={18} color={colors.primary} />
-                </Pressable>
-              ) : null}
-              <Text style={styles.heading}>Your groups</Text>
-            </>
-          ) : null
-        }
-        ListEmptyComponent={
-          // A View, not a fragment: FlatList passes onLayout to this element.
+  const list = (
+    <FlatList
+      data={visible}
+      keyExtractor={(g) => g.id}
+      contentContainerStyle={styles.list}
+      ListHeaderComponent={
+        needsBackup && groups.length ? (
+          <Pressable onPress={() => navigation.navigate('Export')} style={styles.nag}>
+            <Ionicons name="cloud-upload-outline" size={20} color={colors.primary} />
+            <Text style={styles.nagText}>
+              {lastBackup ? 'No backup in the last 2 weeks.' : 'Not backed up yet.'} Your data is only on this phone. Tap to save a copy.
+            </Text>
+            <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+          </Pressable>
+        ) : null
+      }
+      ListEmptyComponent={
+        // A View, not a fragment: FlatList passes onLayout to this element.
+        groups.length === 0 ? (
           <View>
             <EmptyState
               icon="wallet-outline"
               title="No groups yet"
               body="Make a group for a trip, your hostel mess or a flat, add everyone, and log who paid for what. We'll work out who owes whom."
             />
-            <Pressable onPress={() => navigation.navigate('Backup')} hitSlop={8}>
+            <Pressable onPress={() => navigation.navigate('Import')} hitSlop={8}>
               <Text style={styles.importLink}>Have a backup or a group file? Import it</Text>
             </Pressable>
           </View>
+        ) : filter !== 'all' ? (
+          <View>
+            <EmptyState {...FILTER_EMPTY[filter]} />
+          </View>
+        ) : null
+      }
+      renderItem={({ item }) => (
+        <GroupCard
+          group={item}
+          visits={filter === 'visited' ? visits[item.id]?.count : undefined}
+          onPress={() => navigation.navigate('GroupDetail', { groupId: item.id })}
+        />
+      )}
+    />
+  );
+
+  return (
+    <ScreenContainer>
+      {groups.length ? (
+        <>
+          <FilterBar options={FILTERS} value={filter} onChange={setFilter} />
+          <SwipeView index={filterIndex} count={FILTERS.length} onIndexChange={(i) => setFilter(FILTERS[i].key)}>
+            {list}
+          </SwipeView>
+        </>
+      ) : (
+        list
+      )}
+      <Fab
+        label="New group"
+        // Starting from a type filter, the new group gets that type.
+        onPress={() =>
+          navigation.navigate('GroupForm', filter === 'all' || filter === 'visited' ? undefined : { kind: filter })
         }
-        renderItem={({ item }) => (
-          <GroupCard group={item} onPress={() => navigation.navigate('GroupDetail', { groupId: item.id })} />
-        )}
       />
-      <Fab label="New group" onPress={() => navigation.navigate('GroupForm')} />
     </ScreenContainer>
   );
 }
 
-function GroupCard({ group, onPress }: { group: Group; onPress: () => void }) {
+function GroupCard({ group, visits, onPress }: { group: Group; visits?: number; onPress: () => void }) {
   const kind = groupKindOf(group.kind);
   const pending = useMemo(() => suggestTransfers(computeBalances(group)).length, [group]);
   const total = groupTotal(group);
@@ -112,6 +160,7 @@ function GroupCard({ group, onPress }: { group: Group; onPress: () => void }) {
         </Text>
         <Text style={styles.meta}>
           {plural(group.members.length, 'member')} · {plural(group.expenses.length, 'expense')}
+          {visits ? ` · opened ${visits === 1 ? 'once' : `${visits} times`}` : ''}
         </Text>
         {group.expenses.length ? (
           <View style={[styles.badge, pending ? styles.badgePending : styles.badgeDone]}>
@@ -131,7 +180,7 @@ function GroupCard({ group, onPress }: { group: Group; onPress: () => void }) {
 
 const styles = StyleSheet.create({
   loader: { marginTop: spacing(16) },
-  list: { padding: spacing(4), paddingBottom: spacing(28) },
+  list: { paddingHorizontal: spacing(4), paddingTop: spacing(1), paddingBottom: spacing(28) },
   nag: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -143,15 +192,6 @@ const styles = StyleSheet.create({
   },
   nagText: { flex: 1, fontSize: font.sm, color: colors.textPrimary, lineHeight: 18 },
   importLink: { textAlign: 'center', color: colors.primary, fontWeight: '700', fontSize: font.md },
-  heading: {
-    fontSize: font.sm,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    marginBottom: spacing(3),
-    marginLeft: spacing(1),
-  },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
