@@ -168,8 +168,8 @@ Version 1 keeps data only on the phone, so if the app is uninstalled or you chan
 
 | Platform | Status |
 |---|---|
-| Android (Expo Go, SDK 57) | Supported |
-| iOS (Expo Go, SDK 57) | Supported |
+| Android (Expo Go, SDK 58) | Supported |
+| iOS (Expo Go, SDK 58) | Supported |
 | Web browser (`npm run web`) | Supported. Sharing falls back to download, print and clipboard as described above. |
 
 ---

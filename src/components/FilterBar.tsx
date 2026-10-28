@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, type ScrollViewInstance } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../theme/colors';
 import { font, radii, spacing } from '../theme/tokens';
@@ -19,7 +19,7 @@ interface Props<K extends string> {
 
 /** WhatsApp-style row of filter pills. Scrolls sideways if it doesn't fit. */
 export function FilterBar<K extends string>({ options, value, onChange }: Props<K>) {
-  const scroll = useRef<ScrollView>(null);
+  const scroll = useRef<ScrollViewInstance>(null);
   const xs = useRef<Record<string, number>>({});
 
   // Keep the active pill in view when it changes by swiping.

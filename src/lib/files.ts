@@ -27,7 +27,8 @@ export async function shareTextFile(fileName: string, content: string, mimeType:
   }
   const file = new File(Paths.cache, fileName);
   file.create({ overwrite: true });
-  file.write(content);
+  // Sync on purpose (SDK 58 made write() async): the share sheet must get the finished file.
+  file.writeSync(content);
   await beforeShare?.();
   await shareUri(file.uri, mimeType, fileName);
 }
@@ -53,7 +54,7 @@ export async function sharePdf(fileName: string, html: string, beforeShare?: Bef
   if (!base64) throw new Error("The PDF couldn't be created.");
   const named = new File(Paths.cache, fileName);
   named.create({ overwrite: true });
-  named.write(base64, { encoding: 'base64' });
+  named.writeSync(base64, { encoding: 'base64' });
   await beforeShare?.();
   await shareUri(named.uri, 'application/pdf', fileName, 'com.adobe.pdf');
 }

@@ -95,7 +95,7 @@ export function GroupsScreen({ navigation }: ScreenProps<'Groups'>) {
             </Text>
             <Ionicons name="chevron-forward" size={18} color={colors.primary} />
           </Pressable>
-        ) : null
+        ) : undefined
       }
       ListEmptyComponent={
         // A View, not a fragment: FlatList passes onLayout to this element.
@@ -114,7 +114,7 @@ export function GroupsScreen({ navigation }: ScreenProps<'Groups'>) {
           <View>
             <EmptyState {...FILTER_EMPTY[f]} />
           </View>
-        ) : null
+        ) : undefined
       }
       renderItem={({ item }) => (
         <GroupCard

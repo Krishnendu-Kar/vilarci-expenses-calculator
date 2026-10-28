@@ -6,15 +6,12 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#9A0003"
-    },
     "ios": {
       "supportsTablet": true
     },
     "android": {
+      "package": "in.vilarci.split",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#9A0003",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -27,7 +24,17 @@
     },
     "plugins": [
       "expo-sharing",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#9A0003"
+        }
+      ]
     ]
   }
 }

@@ -160,3 +160,6 @@ expo-env.d.ts
 
 # Private development log (local only)
 PIPELINE.md
+
+# APKs built locally (gradlew assembleRelease)
+builds/
