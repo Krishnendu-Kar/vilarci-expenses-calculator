@@ -1,8 +1,10 @@
-# Vilarci Split — Features
+# Vilarci E-Split — Features
 
-Vilarci Split helps a group of people share costs fairly: friends on a trip, students sharing a hostel mess, flatmates splitting groceries. Everyone logs what they paid for, and the app works out who owes whom and the fewest payments needed to even things out.
+Vilarci E-Split helps a group of people share costs fairly: friends on a trip, students sharing a hostel mess, flatmates splitting groceries. Everyone logs what they paid for, and the app works out who owes whom and the fewest payments needed to even things out.
 
 **Version 1:** everything is stored on the phone. No account, no internet, no server.
+
+The app has a bar at the bottom with three pages: **Home** (your groups), **People** (everyone from all your groups) and **Profile** (you).
 
 ---
 
@@ -12,16 +14,34 @@ A group is a set of people who share costs, such as "Goa trip" or "Room 204 mess
 
 | Feature | Details |
 |---|---|
-| Create a group | Give it a name and a type: **Trip**, **Hostel / Flat**, or **Other**. The type sets the group's icon. |
-| Add people | Type a name and tap add (or press Enter). A group needs at least 2 people. |
-| Rename people | Tap any name in the group's edit screen and change it. All expenses update automatically. |
-| Remove people | Allowed only if the person isn't in any expense or payment yet. Otherwise the app explains what to change first, so totals never break. |
-| Duplicate names blocked | Two people can't have the same name (ignoring case), so nobody gets mixed up. |
-| Edit or delete a group | Use the pencil icon in the group's header. Deleting asks for confirmation first. |
-| Group list | Groups are listed with the most recently used first. Each card shows the number of people and expenses, the total spent, and a badge: **"N payments to settle"** or **"All settled"**. |
-| Filter bar | A WhatsApp-style row of filters above the list: **All · Trip · Hostel · Other · Most visited**. Tap one, or **swipe left/right** on the list to move between them. |
-| Most visited | Groups you open most often, most opened first. Each card shows how many times it was opened. The open counts stay on this phone and are never put in backups or shared files. |
+| Create a group | Give it a name and a type: **Trip**, **Hostel / Flat**, or **Other**. The type sets the group's icon, and Hostel / Flat groups work month by month (section 4). |
+| Add yourself | A new group starts with **you** in it once the app knows your name. If it doesn't yet, tap **Me**, type your name once, and you're added; the name is saved to your Profile for next time. |
+| Add people from your other groups | Under the name box, **From your other groups** lists everyone you've added before, with the groups they're in. Tap someone to add them. Typing filters the list, so you can find a friend quickly. |
+| Add someone new | Type a name and tap **+** (or press Enter). This always makes a new person. A group needs at least 2 people. |
+| Same person everywhere | People are saved by an id, not by their name. A friend you add from another group is the same person in both, so the app knows they're one person. |
+| Rename people | Tap any name in the group's edit screen and change it. **The new name shows everywhere**: in every group, every expense, the People page and reports. Two people in the same group can't end up with the same name. |
+| Remove people | Allowed only if the person isn't in any expense, payment or monthly repeat yet. Otherwise the app explains what to change first, so totals never break. |
+| Edit a group | Use the pencil icon in the group's header. |
+
+### Home list
+
+| Feature | Details |
+|---|---|
+| Group cards | Newest activity first. Each card shows the number of people and expenses, the total spent, and a badge: **"N payments to settle"** or **"All settled"**. |
+| Filter bar | A WhatsApp-style row: **All · Trip · Hostel · Other · Most visited · Archived**. Tap one, or **swipe left/right** on the list. **Archived** only appears once something is archived. |
+| Most visited | Groups you open most often, most opened first. The open counts stay on this phone. |
+| Group menu | Tap **⋮** on a card (or long-press it): a small menu opens right at the dots (or under your finger), WhatsApp style, with **Pin to top**, **Archive** and **Move to bin**. Tap outside or press Back to close it. |
+| Pin to top | **Pin to top** turns the same small menu into **Always**, **1 day**, **7 days**, **15 days** or **Custom** (← goes back). Custom asks for any number of days, 1–365. Pinned groups stay first in their lists with a pin and "Pinned · 6 days left". A timed pin ends by itself. |
+| Archive | Hides a finished group from the lists. It waits under **Archived**, opens normally, and shows an **Unarchive** button inside. |
 | New group from a filter | Tapping **New group** while Trip, Hostel or Other is selected starts the new group with that type. |
+
+### Bin
+
+| Feature | Details |
+|---|---|
+| Move to bin | Deleting a group (from its menu, or **Move to bin** in its edit screen) puts it in the **Bin** instead of deleting it straight away. An undo bar appears too. |
+| 30 days | A group stays in the Bin for 30 days, then it's **deleted for good** automatically. |
+| Bin page | **Settings → Bin** lists binned groups with "Deleted for good in N days". **Restore** puts a group back exactly as it was; **Delete now** removes it for good (after a confirmation). |
 
 ---
 
@@ -31,15 +51,19 @@ A group is a set of people who share costs, such as "Goa trip" or "Room 204 mess
 |---|---|
 | Amount | Enter it in rupees, with up to 2 decimals (₹1,200.50). Amounts are stored as whole paise, so totals never drift. You don't need to know the total: type a sum like `48+80+64` or `180x3` and the app shows **= ₹192**. A **+** button adds the plus sign, since phone number keyboards don't have one. |
 | Title | Optional. "Boat ride", "Rice", "Ice cream". If left blank, the category name is used. |
-| Date | Defaults to today. Tap to pick any date (the calendar on a phone, a date input on the web). |
+| Date | Defaults to today. Tap to pick any date. |
 | Category | Food, Travel, Stay, Groceries, Fun, Shopping or Other. Each has an icon, and the Stats tab uses them. |
-| Note | Optional, up to 200 characters, e.g. a bill number or who it was really for. A note icon shows on the expense in the list. |
-| Edit / delete | Tap any expense to change or delete it. The button says **Update changes** and only becomes active once you've actually changed something. |
-| Drafts | If you leave Add expense without adding (going back, switching screens, closing the app), what you typed is saved for that group. Next time you'll see *"Draft restored from where you left off"* with a **Discard** option. Adding the expense clears the draft. |
+| Note | Optional, up to 200 characters, e.g. a bill number. A note icon shows on the expense in the list. |
+| Edit | Tap any expense to change it. The button says **Update changes** and only lights up once you've changed something. |
+| Delete, with undo | Deleting asks first, then shows **"Expense deleted · Undo"** for a few seconds. |
+| ⋮ menu on every expense | In the group's Expenses list, tap **⋮** (or long-press) for a small menu at the dots with **Pin to top**, **Archive** and **Delete** (with undo). |
+| Pin an expense | Pinned expenses show in a **Pinned** section at the top of the list. |
+| Archive an expense | Kept as a record but **left out of every calculation**: totals, balances, settle-up, stats and shared reports. Archived expenses sit in a folded **"Archived (N) · not counted"** section at the bottom (dimmed, amount struck through). **Unarchive** counts it again. In a closed month, archiving or deleting is blocked until the month is reopened. |
+| Drafts | If you leave Add expense without adding, what you typed is saved for that group and restored next time, with a **Discard** option. |
 
 ### Many at once (paste from your group chat)
 
-At the top of Add expense, switch **One expense / Many at once**. Paste a message from WhatsApp (or type one line per person) and the app reads every amount, totals it, and shows a preview before adding anything. Nobody needs to know the total first.
+At the top of Add expense, switch **One expense / Many at once**. Paste a message from WhatsApp (or type one line per person) and the app reads every amount, totals it, and shows a preview before adding anything.
 
 | You type | The app reads it as |
 |---|---|
@@ -47,134 +71,148 @@ At the top of Add expense, switch **One expense / Many at once**. Paste a messag
 | `Tamal 290` | Tamal paid ₹290 for everyone. |
 | `Krish 50+50+sayak60` | Krish paid 50 and 50, Sayak paid 60. A name switches who paid. |
 | `Krish+tamal khabr 50 ami diyachi` | **I** paid ₹50 (title "khabr") for Krish and Tamal only. |
-| `Tamal 30 auto amar ar kish ami diyachi` | I paid ₹30 (auto) for Tamal, me and Krish. "kish" is matched to Krish. |
 | `Sayak roll 40 and krish 24 ami pabo` | I'm owed: ₹40 roll for Sayak, ₹24 for Krish. |
 | `Krish owes me 50` · `Tamal paid 90 for Sayak` · `paid by Om 20` | The same ideas in English. |
 
-- **Words it understands:** "paid / diyachi / diyechi / dilam…" (who paid), "pabo / pabe / owes" (who gets it back), "me / I / ami / amar" (you), and "and / ar / +" (joining names). Any other word next to an amount becomes its title.
-- **Names:** matched to group members even with a short form or a one-letter typo (Krish → Krishnendu, kish → Krish). The app asks once **who "me" is** and remembers it for the group. A name it doesn't know can be matched to a member or **added as a new member**.
-- **Preview:** every expense shows who paid and who it's for. **Tap any row** to change the payer or the people. Rows that need an answer are red, and the app says what's missing.
-- **Totals:** a grand total plus how much each person paid.
-- **Mistakes** are listed with their line number ("Line 3: No amounts found…").
-- WhatsApp's `[28/10, 11:28 am] Name:` copy prefix is ignored. Write 1200, not 1,200.
-- Each amount is saved as its own expense, so a wrong one is easy to fix later.
+- **"Me"** is you: the app already knows from your Profile (or from your last pick in this group), and you can change it in the preview.
+- **Names** are matched to group members even with a short form or a one-letter typo. A name that isn't in the group can be matched to a member, linked to **someone from your other groups**, or **added as a new person**.
+- **Preview:** tap any row to change the payer or the people. Rows that need an answer are red.
+- Each amount is saved as its own expense.
 
-### Who paid
+### Who paid and how it's split
 
-- **One person paid:** tap their name.
-- **More than one person paid:** tap *"More than one person paid?"* and enter how much each person put in (e.g. A ₹2,000 + B ₹1,000 for a ₹3,000 dinner). The app shows how much is still left to assign and won't save until the amounts add up to the total.
-
-### How it's split
-
-| Mode | When to use it | Example |
-|---|---|---|
-| **Equally** | Everyone pays the same. Pick everyone, or only the people it was for. | ₹4,000 boat ride for 3 of the 6 friends → ₹1,333.33 each |
-| **₹ Exact** | You know each person's exact amount. Must add up to the total. A *Fill evenly* button gives everyone the same amount to start from. | Cab ₹900: A ₹600, B ₹300 |
-| **Shares** | Some people had bigger portions. Everyone starts with 1 share. | Dinner ₹3,000, A ate double (2 shares) → A ₹857.15, others ₹428.57 |
-| **%** | Split by percentage. Must add up to 100%. *Fill evenly* is available here too. | Rent: A 50%, B 25%, C 25% |
-
-**Swipe left/right** on the split area to switch between Equally, ₹ Exact, Shares and %.
-
-As you type, the form shows the result live: the amount per person, what each share works out to in rupees, and how much is left (or how much too much) has been assigned.
-
-**Fair rounding:** when an amount doesn't divide evenly (₹100 ÷ 3), the leftover paise go one at a time to the first people, so the parts always add up to exactly the total.
+- **One person paid**, or **more than one person paid** (amounts must add up to the total).
+- **Equally**, **₹ Exact**, **Shares** or **%**. Swipe left/right on the split area to switch. Live numbers show the result as you type.
+- **Fair rounding:** leftover paise go one at a time to the first people, so the parts always add up exactly.
 
 ---
 
 ## 3. Group screen
 
-The top of the screen always shows the **total spent** and the **average per person**. Below that are four tabs. Tap one, or **swipe left/right**: the tabs sit side by side and follow your finger, and each one keeps its own scroll position:
+The top shows the **total spent** and the **average per person**. Four tabs below; tap one or **swipe left/right**:
 
 ### Expenses
-- Grouped by day (**Today**, **Yesterday**, **Sun, 25 Oct**…) with each day's total.
-- Each row shows the title, category icon, who paid (*"Person A & Person B paid"*), how it was split (*"split with everyone"*, *"split 3 ways"*, *"by shares"*…) and the amount.
-- An **Add expense** button floats at the bottom.
+- Grouped by day with each day's total. Each row shows the title, category icon, who paid and how it was split.
+- **Search** at the top: type a title, note, category, a person's name or an amount ("120" finds ₹120 and ₹1,200). Every word must match. Search also finds archived expenses (tagged "Archived").
+- **⋮** on each row: Pin to top, Archive, Delete. Pinned expenses come first; archived ones fold away at the bottom and aren't counted.
+- A repeat icon marks expenses added by a monthly repeat.
 
 ### Members
-- One row per person: **Paid** (what they spent for the group), **Share** (their fair part), plus any settle-up money they've **Sent** or **Got**.
-- The result is shown as **"gets back ₹X"** (green), **"owes ₹X"** (red), or **"settled"**.
+- **Search** members by name.
+- One row per person: **Paid**, **Share**, any settle-up money **Sent** or **Got**, and **"gets back ₹X"** (green), **"owes ₹X"** (red) or **"settled"**.
+- **Your row is marked "You"** and outlined.
 
 ### Settle up
-- The **fewest payments** that make everyone even. A group of N people never needs more than N − 1 payments.
-- Each row reads *"E pays A ₹2,066.66"* and has a **Paid** button. Tap it once the money has actually been sent (by UPI, cash, etc.).
-- **Payments recorded** lists everything marked as paid, and each one can be undone.
-- Anything under ₹1 counts as settled, so nobody is ever asked to send ₹0.01.
+- The **fewest payments** that make everyone even.
+- Tap **Paid** once the money has been sent. An undo bar appears straight away in case it was a mistake.
+- Rows involving you read "Krish (you) pays Rahul".
+- **Payments recorded** lists everything marked as paid; each can be undone (with its own undo bar).
 
 ### Stats
-- **Biggest expense**, plus the **average per day** for groups that span several days.
-- **Where the money went:** each category's total and percentage, with bars.
-- **Who paid:** how much each person paid, with their fair share underneath.
-- **Day by day:** spending per day (shown when there's more than one day).
+- Biggest expense, average per day, spending by category, who paid, and day by day.
 
 ---
 
-## 4. Sending details to people who don't have the app
+## 4. Hostel / Flat groups: month by month
 
-Tap the **share icon** at the top of a group, or **Send to the group** on the Settle tab, and choose one of three options:
-
-| Option | What the other person gets | Best for |
-|---|---|---|
-| **PDF report** | A clean document with the group name, dates, totals, **who pays whom**, a balances table, spending by category, every expense (date, item, note, who paid, how it was split) and payments already made. | Anyone. Opens on any phone or computer, no app needed. |
-| **Message (WhatsApp, SMS)** | The same summary as a text message, formatted with WhatsApp bold and emoji, ready to paste in the group chat. | A quick update in the group chat. |
-| **Group file for the app** | A `.vilarci.json` file containing the whole group. | Friends who have Vilarci Split. They import it and see everything. |
-
-On a phone these open the normal share menu (WhatsApp, Gmail, Drive, Bluetooth…). In a web browser, the PDF opens the print dialog (choose *Save as PDF*), the message is copied to the clipboard if the browser can't share, and the group file is downloaded.
-
----
-
-## 5. Settings: export, import and about
-
-Open **Settings** with the gear icon at the top right of the home screen. It's a simple menu: each option opens its own page, and the **app version** is shown at the very bottom.
-
-| Option | What it does |
-|---|---|
-| **Export data** | Opens the export page. |
-| **Import data** | Opens the import page. |
-| **About** | App logo, name, version, what the app does, and a link to vilarci.in. |
-
-Version 1 keeps data only on the phone, so if the app is uninstalled or you change phones, the data is gone. Export and Import fix that:
+Hostel and flat groups run for months, so they work differently from trips.
 
 | Feature | Details |
 |---|---|
-| **Export** | Saves *all* groups into one file named like `vilarci-split-backup-2026-10-27.json` and opens the share menu, so you can keep it in Google Drive, email it, or send it to yourself on WhatsApp. |
-| **Last export date** | Shown on the Export page. It turns red if you've never backed up or the last backup is more than 2 weeks old. |
-| **Reminder** | A banner on the home screen appears once you have a few expenses and haven't backed up in 2 weeks. Tap it to go straight to Export. |
-| **Import** | Pick a backup or a group file a friend sent. Nothing changes until you confirm. |
-| **Import preview** | Lists each group in the file as **New** (it will be added) or **Updates your copy** (it will replace the group already on your phone). If your copy was changed *more recently* than the file, you get a warning. |
-| **Safe with bad files** | Picking the wrong file shows a clear message ("This isn't a Vilarci Split backup…"). Broken entries inside a file are skipped and counted, never loaded halfway. Files from a newer app version ask you to update first. |
-| **New phone** | When there are no groups, the home screen offers *"Have a backup or a group file? Import it"*. |
+| Month view | A bar at the top: **‹ October 2026 ›**. The total, Expenses and Stats show only that month. It opens on the current month. |
+| Carried over | The Members tab shows the month's own Paid and Share plus **"From earlier months: owes ₹X"**. The balance on the right is where each person stands at the end of the month, so anything unpaid carries into the next month. |
+| Settle up | Always covers everything up to now, not just the month showing. |
+| All months | Tap the month name, then **Show all months** for everything together (and **Back to this month** to return). |
+| Close a month | From the month menu: **Close October 2026**. Its expenses are locked (they can't be added to, edited or deleted) and the month shows a lock. **Reopen** it from the same menu. |
+| Repeat every month | When adding an expense like rent, Wi-Fi or a cook, switch on **Repeat every month**. It's then added by itself on the same day each month (the 31st becomes the last day of short months). Months missed while the app was closed are caught up; closed months are skipped. |
+| Change a repeat | Edit any of its expenses with the switch on, and the next months use the new numbers. Switch it off to stop repeating. |
+| Repeating expenses page | From the month menu: every repeat with its day, payer and amount, **Open the latest one**, and **Stop** (with undo). |
 
 ---
 
-## 6. Data and privacy
+## 5. People
 
-- **Stored on the device only** (AsyncStorage). No account, no server, no tracking.
-- Data only leaves the phone when **you** share a report or export a backup.
-- **Automatic upgrades:** data saved by an older version of the app is upgraded the next time it opens. Data from the first v1 build (single payer, no dates) was migrated and tested.
+| Feature | Details |
+|---|---|
+| People page | Everyone from all your groups, once, even if they're in several. You come first. Each row shows their groups and their total across them. **Search** by name. |
+| A person's page | Their balance in each group (tap to open the group), totals for "Gets back" and "Owes", **Rename** (changes the name in every group), and **This is me** to link yourself. Someone who's in no group can be removed. |
+
+---
+
+## 6. Profile
+
+| Feature | Details |
+|---|---|
+| Your name | Saved on this phone only. It tells the app which member is you in each group, and lets you add yourself to new groups in one tap. Renaming yourself renames your person everywhere. |
+| Your balance | **Across all your groups:** "You get back ₹X" and "You owe ₹Y" (or "You're all settled"), then one line per group. |
+| Who you are in a group | Each group line shows "You: Krish · change". Where the app can't tell, it asks "Who are you here?" and you pick the member once. The same choice is used for "me" in Many at once. |
+| Settings | A Settings row at the bottom (also the gear on Home). |
+
+---
+
+## 7. Sending details to people who don't have the app
+
+Tap the **share icon** at the top of a group, or **Send to the group** on the Settle tab:
+
+| Option | What the other person gets |
+|---|---|
+| **PDF report** | Group name, dates, totals, who pays whom, balances, spending by category, every expense and payments made. Opens on any phone. Written in the app's language. |
+| **Message (WhatsApp, SMS)** | The same summary as a text message with WhatsApp bold. Written in the app's language. |
+| **Group file for the app** | A `.vilarci.json` file friends with the app can import. (This and Import will be replaced by live sharing in a future update.) |
+
+---
+
+## 8. Settings
+
+Open with the gear on Home, or from Profile. A menu; each option opens its own page:
+
+| Option | What it does |
+|---|---|
+| **Export data** | Saves all groups into one file (`vilarci-e-split-backup-2026-10-27.json`) through the share menu. Shows the last export date, red if it's over 2 weeks old. A home banner reminds you after 2 weeks. |
+| **Import data** | Pick a backup or a group file. A preview shows each group as **New** or **Updates your copy** before anything changes. Broken files are explained, never half-loaded. |
+| **Bin** | Deleted groups, kept 30 days (section 1). |
+| **Appearance** | **Same as phone**, **Light** or **Dark**. Dark mode covers every screen; shared PDFs stay light. |
+| **Language** | **English, हिन्दी (Hindi), বাংলা (Bengali), தமிழ் (Tamil).** The whole app switches at once, including dates, reports and messages you share. |
+| **About** | Logo, name, version, what the app does, and a link to vilarci.in. |
+
+The app version is shown at the bottom of Settings.
+
+---
+
+## 9. Undo and safety
+
+- **Undo bar:** after deleting or archiving an expense, moving a group to the bin, archiving a group, removing or marking a payment, or stopping a repeat, a bar at the bottom offers **Undo** for 6 seconds.
+- **Error screen instead of a crash:** if something goes wrong, the app shows "Something went wrong" with **Try again**, **Export my data** (straight from storage, so your data can always be saved), and **Send error details**.
 - Money is kept in **whole paise**, so every total, split and balance is exact.
 
 ---
 
-## 7. Branding
+## 10. Data and privacy
 
-- The **Vilarci logo** (from `https://officialpic.vilarci.in/Icons/web-icon.png`) is used as the app icon, the Android adaptive and themed (monochrome) icons, the splash screen, and the browser tab icon.
-- The home screen header shows the logo next to **Vilarci Split**.
-- Every **PDF report** carries the logo in its header.
-- The logo is bundled with the app, so it shows even with no internet.
+- **Stored on the device only.** No account, no server, no tracking.
+- Data only leaves the phone when **you** share a report or export a backup.
+- Your profile, the People directory, pins, archive, the Bin, open counts and app settings stay on this phone and are never put in backups or shared files.
+- **Automatic upgrades:** data from older versions of the app is upgraded the next time it opens.
 
 ---
 
-## 8. Platforms
+## 11. Branding
+
+- The **Vilarci logo** is the app icon (including Android's adaptive and themed icons), the splash screen, the home header and the PDF header. It's bundled, so it shows offline.
+
+---
+
+## 12. Platforms
 
 | Platform | Status |
 |---|---|
-| Android (Expo Go, SDK 58) | Supported |
+| Android (Expo Go, SDK 58; Play Store build) | Supported |
 | iOS (Expo Go, SDK 58) | Supported |
-| Web browser (`npm run web`) | Supported. Sharing falls back to download, print and clipboard as described above. |
+| Web browser (`npm run web`) | Supported. Sharing falls back to download, print and clipboard. |
 
 ---
 
-## 9. Coming in v2
+## 13. Coming next
 
-- Cloud database and accounts, so the whole group sees the same data live without passing files around.
-- Exporting a backup file will keep working as an offline copy.
+- **Live sharing with a database:** the whole group sees the same data, and it replaces Import and group files. Export stays as an offline copy.
+- Later: receipt photos, a "Rate the app" prompt, foreign currencies, itemised bills, fingerprint lock.

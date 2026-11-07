@@ -5,7 +5,9 @@ import {
   allocate,
   categoryTotals,
   computeBalances,
+  counted,
   dailyTotals,
+  groupTotal,
   expenseShares,
   memberIsInvolved,
   suggestTransfers,
@@ -157,5 +159,20 @@ describe('memberIsInvolved', () => {
     assert.equal(memberIsInvolved(g, 'B'), true);
     assert.equal(memberIsInvolved(g, 'C'), true);
     assert.equal(memberIsInvolved(g, 'D'), false);
+  });
+});
+
+describe('archived expenses', () => {
+  it('stay saved but count nowhere: balances, totals, categories, days', () => {
+    const live = expense('rice', 300, 'A', ['A', 'B', 'C']);
+    const old = { ...expense('boat', 900, 'B', ['A', 'B', 'C'], { date: '2026-10-28' }), archivedAt: 5 };
+    const g = group(['A', 'B', 'C'], [live, old]);
+    assert.deepEqual(net(g), { A: 20000, B: -10000, C: -10000 });
+    assert.equal(groupTotal(g), 30000);
+    assert.deepEqual(categoryTotals(g).map((c) => c.amount), [30000]);
+    assert.deepEqual(dailyTotals(g).map((d) => d.date), ['2026-10-27']);
+    assert.equal(counted(old), false);
+    // The archived expense still holds B in the group.
+    assert.equal(memberIsInvolved(group(['A', 'B'], [{ ...old, splitAmong: ['A', 'B'] }]), 'B'), true);
   });
 });

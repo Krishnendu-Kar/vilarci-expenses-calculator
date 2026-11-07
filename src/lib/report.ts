@@ -2,20 +2,22 @@ import type { Group } from '../types';
 import {
   categoryTotals,
   computeBalances,
+  counted,
   groupTotal,
   isSettled,
   suggestTransfers,
   type MemberBalance,
   type Transfer,
 } from './split';
-import { payerLong, splitLong } from './describe';
+import { balanceWords, payerLong, splitLong } from './describe';
 import { money } from './money';
-import { longDate, plural } from './format';
+import { longDate } from './format';
 import { categoryOf, groupKindOf } from '../data/categories';
 import { LOGO_DATA_URI } from '../data/logo';
+import { dateLocale, getLang, translate as t } from '../i18n';
 
 // Reports for people who don't have the app: a chat message and a PDF.
-// Both are built from the same numbers the app shows.
+// Both are built from the same numbers the app shows, in the app's language.
 
 interface ReportData {
   group: Group;
@@ -30,7 +32,10 @@ interface ReportData {
 
 function collect(group: Group): ReportData {
   const balances = computeBalances(group);
-  const expenses = [...group.expenses].sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt);
+  // Archived expenses aren't part of the numbers, so reports leave them out.
+  const expenses = group.expenses
+    .filter(counted)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt - b.createdAt);
   const first = expenses[0]?.date;
   const last = expenses[expenses.length - 1]?.date;
   return {
@@ -44,33 +49,39 @@ function collect(group: Group): ReportData {
   };
 }
 
-function balanceWords(net: number) {
-  if (isSettled(net)) return 'settled';
-  return net > 0 ? `gets back ${money(net)}` : `owes ${money(-net)}`;
-}
-
 /** WhatsApp-friendly text (*bold* renders in WhatsApp, reads fine elsewhere). */
 export function buildTextReport(group: Group) {
   const d = collect(group);
   const lines: string[] = [
-    `🧾 *${group.name}* — expense summary`,
-    [plural(group.members.length, 'person'), plural(group.expenses.length, 'expense'), d.range].filter(Boolean).join(' · '),
-    `Total spent: *${money(d.total)}*`,
+    t('report.title', { name: group.name }),
+    [t('count.person', { count: group.members.length }), t('count.expense', { count: d.expenses.length }), d.range]
+      .filter(Boolean)
+      .join(' · '),
+    t('report.total', { amount: money(d.total) }),
     '',
   ];
 
-  lines.push('*Who pays whom*');
-  if (d.transfers.length === 0) lines.push('Everyone is settled up 🎉');
-  for (const t of d.transfers) lines.push(`➡️ ${d.names[t.from]} pays ${d.names[t.to]} *${money(t.amount)}*`);
-  lines.push('');
-
-  lines.push('*Balances*');
-  for (const b of [...d.balances].sort((x, y) => y.net - x.net)) {
-    lines.push(`${d.names[b.memberId]}: paid ${money(b.paid)}, share ${money(b.share)} → ${balanceWords(b.net)}`);
+  lines.push(t('report.whoPays'));
+  if (d.transfers.length === 0) lines.push(t('report.allSettled'));
+  for (const tr of d.transfers) {
+    lines.push(t('report.pays', { from: d.names[tr.from], to: d.names[tr.to], amount: money(tr.amount) }));
   }
   lines.push('');
 
-  lines.push('*Expenses*');
+  lines.push(t('report.balances'));
+  for (const b of [...d.balances].sort((x, y) => y.net - x.net)) {
+    lines.push(
+      t('report.balanceLine', {
+        name: d.names[b.memberId],
+        paid: money(b.paid),
+        share: money(b.share),
+        result: balanceWords(b.net),
+      }),
+    );
+  }
+  lines.push('');
+
+  lines.push(t('report.expenses'));
   let day = '';
   for (const e of d.expenses) {
     if (e.date !== day) {
@@ -79,21 +90,26 @@ export function buildTextReport(group: Group) {
     }
     lines.push(`• ${e.title} — ${money(e.amount)}`);
     const split = splitLong(e, d.names, group.members.length);
-    lines.push(`   paid by ${payerLong(e, d.names)}, ${e.splitMode === 'equal' ? split : `split ${split}`}`);
+    const splitText = e.splitMode === 'equal' ? split : t('report.splitCustom', { split });
+    lines.push(`   ${t('report.paidBy', { payers: payerLong(e, d.names), split: splitText })}`);
     if (e.note) lines.push(`   📝 ${e.note}`);
   }
 
   if (group.payments.length) {
-    lines.push('', '*Payments already made*');
-    for (const p of group.payments) lines.push(`✓ ${d.names[p.from]} paid ${d.names[p.to]} ${money(p.amount)}`);
+    lines.push('', t('report.paymentsMade'));
+    for (const p of group.payments) {
+      lines.push(t('report.paymentLine', { from: d.names[p.from], to: d.names[p.to], amount: money(p.amount) }));
+    }
   }
 
-  lines.push('', '_Made with Vilarci Split_');
+  lines.push('', t('report.footer'));
   return lines.join('\n');
 }
 
 const esc = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+
+const fullDate = (d: Date) => d.toLocaleDateString(dateLocale(), { day: 'numeric', month: 'short', year: 'numeric' });
 
 /** Self-contained HTML (no external assets) for expo-print. */
 export function buildHtmlReport(group: Group, now = new Date()) {
@@ -106,19 +122,21 @@ export function buildHtmlReport(group: Group, now = new Date()) {
   const transfers = d.transfers.length
     ? d.transfers
         .map(
-          (t) => `<div class="transfer"><span><b>${n(t.from)}</b> pays <b>${n(t.to)}</b></span><span class="amt">${money(t.amount)}</span></div>`,
+          (tr) =>
+            `<div class="transfer"><span>${t('pdf.pays', { from: `<b>${n(tr.from)}</b>`, to: `<b>${n(tr.to)}</b>` })}</span><span class="amt">${money(tr.amount)}</span></div>`,
         )
         .join('')
-    : '<p class="settled">Everyone is settled up 🎉</p>';
+    : `<p class="settled">${esc(t('report.allSettled'))}</p>`;
 
   const balances = [...d.balances]
     .sort((a, b) => b.net - a.net)
     .map((b) => {
       const cls = isSettled(b.net) ? '' : b.net > 0 ? 'pos' : 'neg';
-      const moved = [b.sent ? `sent ${money(b.sent)}` : '', b.received ? `got ${money(b.received)}` : '']
-        .filter(Boolean)
-        .join(', ') || '—';
-      return `<tr><td>${n(b.memberId)}</td><td class="r">${money(b.paid)}</td><td class="r">${money(b.share)}</td><td class="r">${moved}</td><td class="r ${cls}"><b>${balanceWords(b.net)}</b></td></tr>`;
+      const moved =
+        [b.sent ? t('pdf.sent', { amount: money(b.sent) }) : '', b.received ? t('pdf.got', { amount: money(b.received) }) : '']
+          .filter(Boolean)
+          .join(', ') || '—';
+      return `<tr><td>${n(b.memberId)}</td><td class="r">${money(b.paid)}</td><td class="r">${money(b.share)}</td><td class="r">${esc(moved)}</td><td class="r ${cls}"><b>${esc(balanceWords(b.net))}</b></td></tr>`;
     })
     .join('');
 
@@ -142,19 +160,24 @@ export function buildHtmlReport(group: Group, now = new Date()) {
     .join('');
 
   const payments = group.payments.length
-    ? `<h2>Payments already made</h2><table><tr><th>Date</th><th>From</th><th>To</th><th class="r">Amount</th></tr>${group.payments
+    ? `<h2>${esc(t('pdf.paymentsMade'))}</h2><table><tr><th>${esc(t('pdf.date'))}</th><th>${esc(t('pdf.from'))}</th><th>${esc(t('pdf.to'))}</th><th class="r">${esc(t('pdf.amount'))}</th></tr>${group.payments
         .map(
-          (p) => `<tr><td>${esc(new Date(p.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }))}</td><td>${n(p.from)}</td><td>${n(p.to)}</td><td class="r">${money(p.amount)}</td></tr>`,
+          (p) =>
+            `<tr><td>${esc(fullDate(new Date(p.createdAt)))}</td><td>${n(p.from)}</td><td>${n(p.to)}</td><td class="r">${money(p.amount)}</td></tr>`,
         )
         .join('')}</table>`
     : '';
 
+  const sub = [esc(groupKindOf(group.kind).label), esc(t('count.person', { count: group.members.length })), d.range ? esc(d.range) : '']
+    .filter(Boolean)
+    .join(' · ');
+
   return `<!doctype html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(group.name)} — expenses</title>
+<html lang="${getLang()}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(t('pdf.docTitle', { name: group.name }))}</title>
 <style>
   * { box-sizing: border-box; }
-  body { font-family: -apple-system, Roboto, 'Segoe UI', Arial, sans-serif; color: #241012; margin: 0; padding: 28px; font-size: 12px; }
+  body { font-family: -apple-system, Roboto, 'Segoe UI', 'Noto Sans', Arial, sans-serif; color: #241012; margin: 0; padding: 28px; font-size: 12px; }
   header { background: #7A1F2B; color: #fff; border-radius: 14px; padding: 18px 22px; display: flex; align-items: center; gap: 16px; }
   header .logo { width: 52px; height: 52px; border-radius: 12px; border: 1.5px solid rgba(255,255,255,.35); flex-shrink: 0; }
   header h1 { margin: 0 0 4px; font-size: 22px; }
@@ -184,28 +207,28 @@ export function buildHtmlReport(group: Group, now = new Date()) {
     <img class="logo" src="${LOGO_DATA_URI}" alt="Vilarci">
     <div>
       <h1>${esc(group.name)}</h1>
-      <div class="sub">${esc(groupKindOf(group.kind).label)} · ${plural(group.members.length, 'person')}${d.range ? ` · ${esc(d.range)}` : ''}</div>
+      <div class="sub">${sub}</div>
     </div>
   </header>
   <div class="tiles">
-    <div class="tile"><div class="k">Total spent</div><div class="v">${money(d.total)}</div></div>
-    <div class="tile"><div class="k">Per person avg</div><div class="v">${money(avg)}</div></div>
-    <div class="tile"><div class="k">Expenses</div><div class="v">${group.expenses.length}</div></div>
+    <div class="tile"><div class="k">${esc(t('pdf.totalSpent'))}</div><div class="v">${money(d.total)}</div></div>
+    <div class="tile"><div class="k">${esc(t('pdf.avg'))}</div><div class="v">${money(avg)}</div></div>
+    <div class="tile"><div class="k">${esc(t('pdf.expenses'))}</div><div class="v">${d.expenses.length}</div></div>
   </div>
 
-  <h2>Who pays whom</h2>
+  <h2>${esc(t('pdf.whoPays'))}</h2>
   ${transfers}
 
-  <h2>Balances</h2>
-  <table><tr><th>Person</th><th class="r">Paid</th><th class="r">Fair share</th><th class="r">Settle-up payments</th><th class="r">Balance</th></tr>${balances}</table>
+  <h2>${esc(t('pdf.balances'))}</h2>
+  <table><tr><th>${esc(t('pdf.person'))}</th><th class="r">${esc(t('pdf.paid'))}</th><th class="r">${esc(t('pdf.fairShare'))}</th><th class="r">${esc(t('pdf.settlePayments'))}</th><th class="r">${esc(t('pdf.balance'))}</th></tr>${balances}</table>
 
-  ${cats.length ? `<h2>Spending by category</h2><table>${categories}</table>` : ''}
+  ${cats.length ? `<h2>${esc(t('pdf.byCategory'))}</h2><table>${categories}</table>` : ''}
 
-  <h2>All expenses</h2>
-  ${d.expenses.length ? `<table><tr><th>Date</th><th>Item</th><th>Paid by</th><th>Split</th><th class="r">Amount</th></tr>${expenses}</table>` : '<p class="muted">No expenses yet.</p>'}
+  <h2>${esc(t('pdf.allExpenses'))}</h2>
+  ${d.expenses.length ? `<table><tr><th>${esc(t('pdf.date'))}</th><th>${esc(t('pdf.item'))}</th><th>${esc(t('pdf.paidBy'))}</th><th>${esc(t('pdf.split'))}</th><th class="r">${esc(t('pdf.amount'))}</th></tr>${expenses}</table>` : `<p class="muted">${esc(t('pdf.noExpenses'))}</p>`}
 
   ${payments}
 
-  <footer>Made with Vilarci Split · ${esc(now.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }))}</footer>
+  <footer>${esc(t('pdf.footer', { date: fullDate(now) }))}</footer>
 </body></html>`;
 }

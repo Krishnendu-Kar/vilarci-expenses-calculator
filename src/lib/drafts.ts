@@ -4,8 +4,6 @@ import type { CategoryKey, SplitMode } from '../types';
 // Unsaved "Add expense" forms, one per group, so leaving the page (or the
 // app) doesn't lose what was typed. Never exported or shared.
 const DRAFTS_KEY = 'vilarci-split:expense-drafts';
-// Who "me"/"ami" is in each group, remembered for "Many at once".
-const ME_KEY = 'vilarci-split:me';
 
 export interface OneForm {
   title: string;
@@ -19,6 +17,8 @@ export interface OneForm {
   mode: SplitMode;
   selected: string[];
   values: Record<Exclude<SplitMode, 'equal'>, Record<string, string>>;
+  /** Hostel/flat groups: "Repeat every month" was switched on. */
+  repeat?: boolean;
 }
 
 export interface ManyForm {
@@ -66,24 +66,4 @@ export async function clearDraft(groupId: string) {
   if (!(groupId in all)) return;
   delete all[groupId];
   await AsyncStorage.setItem(DRAFTS_KEY, JSON.stringify(all));
-}
-
-export async function getMe(groupId: string): Promise<string | null> {
-  try {
-    const raw = await AsyncStorage.getItem(ME_KEY);
-    return (raw ? JSON.parse(raw) : {})[groupId] ?? null;
-  } catch {
-    return null;
-  }
-}
-
-export async function setMe(groupId: string, memberId: string) {
-  let all: Record<string, string> = {};
-  try {
-    all = JSON.parse((await AsyncStorage.getItem(ME_KEY)) ?? '{}');
-  } catch {
-    // start over
-  }
-  all[groupId] = memberId;
-  await AsyncStorage.setItem(ME_KEY, JSON.stringify(all));
 }

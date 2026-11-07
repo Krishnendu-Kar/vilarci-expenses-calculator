@@ -1,7 +1,21 @@
 /// <reference types="node" />
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { addVisit, filterGroups, pruneVisits, sanitizeVisits, type Visits } from '../groupFilters';
+import {
+  addVisit,
+  archive,
+  filterGroups,
+  isPinned,
+  pin,
+  pinDaysLeft,
+  prunePrefs,
+  pruneVisits,
+  sanitizePrefs,
+  sanitizeVisits,
+  unarchive,
+  unpin,
+  type Visits,
+} from '../groupFilters';
 import { group } from './fixtures';
 import type { GroupKind } from '../../types';
 
@@ -55,5 +69,47 @@ describe('visits', () => {
     assert.deepEqual(sanitizeVisits({ a: { count: 2, last: 5 }, b: { count: -1, last: 5 }, c: null, d: { count: 1.5, last: 1 } }), {
       a: { count: 2, last: 5 },
     });
+  });
+});
+
+describe('pins and archive', () => {
+  const DAY = 24 * 3600 * 1000;
+
+  it('pinned groups come first, latest pin on top, within their filter too', () => {
+    let prefs = pin({}, 'goa', null, 100);
+    prefs = pin(prefs, 'flat', 7, 200);
+    assert.deepEqual(ids(filterGroups(groups, 'all', {}, prefs, 300)), ['flat', 'goa', 'manali', 'mess']);
+    assert.deepEqual(ids(filterGroups(groups, 'trip', {}, prefs, 300)), ['goa', 'manali']);
+  });
+
+  it('a timed pin runs out', () => {
+    const prefs = pin({}, 'goa', 1, 0);
+    assert.equal(isPinned(prefs.goa, DAY - 1), true);
+    assert.equal(pinDaysLeft(prefs.goa, 1), 1);
+    assert.equal(isPinned(prefs.goa, DAY + 1), false);
+    assert.deepEqual(ids(filterGroups(groups, 'all', {}, prefs, DAY + 1)), ['manali', 'mess', 'flat', 'goa']);
+    assert.deepEqual(prunePrefs(prefs, groups, DAY + 1), {});
+  });
+
+  it('archived groups leave every list but Archived, and archiving unpins', () => {
+    let prefs = pin({}, 'mess', null, 1);
+    prefs = archive(prefs, 'mess', 5);
+    assert.equal(isPinned(prefs.mess), false);
+    assert.ok(!ids(filterGroups(groups, 'all', {}, prefs)).includes('mess'));
+    assert.deepEqual(filterGroups(groups, 'hostel', {}, prefs), []);
+    assert.deepEqual(filterGroups(groups, 'visited', { mess: { count: 3, last: 1 } }, prefs), []);
+    assert.deepEqual(ids(filterGroups(groups, 'archived', {}, prefs)), ['mess']);
+    assert.deepEqual(unarchive(prefs, 'mess'), {});
+  });
+
+  it('unpin keeps the archive state; pruning drops deleted groups', () => {
+    const prefs = { goa: { pinnedAt: 1, pinUntil: null }, gone: { archivedAt: 1 } };
+    assert.deepEqual(unpin(prefs, 'goa'), { gone: { archivedAt: 1 } });
+    assert.deepEqual(prunePrefs(prefs, groups, 2), { goa: { pinnedAt: 1, pinUntil: null } });
+  });
+
+  it('ignores malformed stored prefs', () => {
+    assert.deepEqual(sanitizePrefs([1]), {});
+    assert.deepEqual(sanitizePrefs({ a: { pinnedAt: 5 }, b: { archivedAt: 'x' }, c: null }), { a: { pinnedAt: 5, pinUntil: null } });
   });
 });

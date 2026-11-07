@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { avatarColors, colors } from '../theme/colors';
+import { avatarColors } from '../theme/colors';
 import { initials } from '../lib/format';
 
 function tintFor(name: string) {
@@ -17,7 +17,8 @@ export function Avatar({ name, size = 36 }: { name: string; size?: number }) {
   );
 }
 
+// The tints are the same in both themes and all dark enough for white initials.
 const styles = StyleSheet.create({
   circle: { alignItems: 'center', justifyContent: 'center' },
-  text: { color: colors.white, fontWeight: '700' },
+  text: { color: '#FFFFFF', fontWeight: '700' },
 });

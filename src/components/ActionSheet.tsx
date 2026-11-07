@@ -1,8 +1,8 @@
 import React from 'react';
-import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '../theme/colors';
+import { makeStyles, useTheme } from '../theme/ThemeContext';
 import { font, radii, spacing } from '../theme/tokens';
 import type { IconName } from '../data/categories';
 
@@ -10,7 +10,9 @@ export interface SheetOption {
   key: string;
   icon: IconName;
   title: string;
-  body: string;
+  body?: string;
+  /** Red, for things like Delete. */
+  danger?: boolean;
 }
 
 interface Props {
@@ -22,11 +24,15 @@ interface Props {
   busy?: string | null;
   onPick: (key: string) => void;
   onClose: () => void;
+  /** Extra content under the options (e.g. a number field). */
+  children?: React.ReactNode;
 }
 
 /** Bottom sheet of big, explained choices. */
-export function ActionSheet({ visible, title, subtitle, options, busy, onPick, onClose }: Props) {
+export function ActionSheet({ visible, title, subtitle, options, busy, onPick, onClose, children }: Props) {
   const insets = useSafeAreaInsets();
+  const styles = useStyles();
+  const { colors } = useTheme();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose} />
@@ -41,29 +47,30 @@ export function ActionSheet({ visible, title, subtitle, options, busy, onPick, o
             onPress={() => onPick(o.key)}
             style={({ pressed }) => [styles.option, pressed && styles.pressed]}
           >
-            <View style={styles.iconWrap}>
-              <Ionicons name={o.icon} size={22} color={colors.primary} />
+            <View style={[styles.iconWrap, o.danger && styles.iconDanger]}>
+              <Ionicons name={o.icon} size={22} color={o.danger ? colors.danger : colors.tint} />
             </View>
             <View style={styles.body}>
-              <Text style={styles.optionTitle}>{o.title}</Text>
-              <Text style={styles.optionBody}>{o.body}</Text>
+              <Text style={[styles.optionTitle, o.danger && styles.danger]}>{o.title}</Text>
+              {o.body ? <Text style={styles.optionBody}>{o.body}</Text> : null}
             </View>
             {busy === o.key ? (
-              <ActivityIndicator color={colors.primary} />
+              <ActivityIndicator color={colors.tint} />
             ) : (
               <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
             )}
           </Pressable>
         ))}
+        {children}
       </View>
     </Modal>
   );
 }
 
-const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(36,16,18,0.45)' },
+const useStyles = makeStyles((c) => ({
+  backdrop: { flex: 1, backgroundColor: c.backdrop },
   sheet: {
-    backgroundColor: colors.background,
+    backgroundColor: c.background,
     borderTopLeftRadius: radii.xl,
     borderTopRightRadius: radii.xl,
     paddingHorizontal: spacing(4),
@@ -74,13 +81,13 @@ const styles = StyleSheet.create({
     width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: colors.border,
+    backgroundColor: c.border,
     marginBottom: spacing(4),
   },
-  title: { fontSize: font.lg, fontWeight: '800', color: colors.textPrimary, paddingHorizontal: spacing(1) },
+  title: { fontSize: font.lg, fontWeight: '800', color: c.textPrimary, paddingHorizontal: spacing(1) },
   subtitle: {
     fontSize: font.sm,
-    color: colors.textSecondary,
+    color: c.textSecondary,
     marginTop: spacing(1),
     marginBottom: spacing(2),
     paddingHorizontal: spacing(1),
@@ -89,9 +96,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing(3),
-    backgroundColor: colors.surface,
+    backgroundColor: c.surface,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: c.border,
     borderRadius: radii.lg,
     padding: spacing(3.5),
     marginTop: spacing(2.5),
@@ -101,11 +108,13 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: radii.md,
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: c.surfaceAlt,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  iconDanger: { backgroundColor: c.dangerBg },
   body: { flex: 1 },
-  optionTitle: { fontSize: font.md, fontWeight: '700', color: colors.textPrimary },
-  optionBody: { fontSize: font.sm, color: colors.textSecondary, marginTop: 2, lineHeight: 17 },
-});
+  optionTitle: { fontSize: font.md, fontWeight: '700', color: c.textPrimary },
+  danger: { color: c.danger },
+  optionBody: { fontSize: font.sm, color: c.textSecondary, marginTop: 2, lineHeight: 17 },
+}));

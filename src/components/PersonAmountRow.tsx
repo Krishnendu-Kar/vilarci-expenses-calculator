@@ -1,7 +1,7 @@
 import React from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { Text, TextInput, View } from 'react-native';
 import { Avatar } from './Avatar';
-import { colors } from '../theme/colors';
+import { makeStyles, useTheme } from '../theme/ThemeContext';
 import { font, radii, spacing } from '../theme/tokens';
 
 interface Props {
@@ -17,6 +17,8 @@ interface Props {
 
 /** One person + a number field: used for multiple payers and custom splits. */
 export function PersonAmountRow({ name, value, onChangeText, prefix, suffix, hint, integer }: Props) {
+  const styles = useStyles();
+  const { colors, dark } = useTheme();
   return (
     <View style={styles.row}>
       <Avatar name={name} size={30} />
@@ -34,6 +36,7 @@ export function PersonAmountRow({ name, value, onChangeText, prefix, suffix, hin
         placeholder="0"
         placeholderTextColor={colors.textSecondary}
         keyboardType={integer ? 'number-pad' : 'decimal-pad'}
+        keyboardAppearance={dark ? 'dark' : 'light'}
         maxLength={10}
         selectTextOnFocus
       />
@@ -42,27 +45,27 @@ export function PersonAmountRow({ name, value, onChangeText, prefix, suffix, hin
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((c) => ({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing(2.5),
     paddingVertical: spacing(2),
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
+    borderBottomWidth: 0.5,
+    borderBottomColor: c.border,
   },
   nameCol: { flex: 1 },
-  name: { fontSize: font.md, color: colors.textPrimary, fontWeight: '600' },
-  hint: { fontSize: font.xs + 1, color: colors.textSecondary, marginTop: 1 },
-  affix: { fontSize: font.md, color: colors.textSecondary },
+  name: { fontSize: font.md, color: c.textPrimary, fontWeight: '600' },
+  hint: { fontSize: font.xs + 1, color: c.textSecondary, marginTop: 1 },
+  affix: { fontSize: font.md, color: c.textSecondary },
   input: {
     width: 92,
     textAlign: 'right',
     fontSize: font.md + 1,
-    color: colors.textPrimary,
-    backgroundColor: colors.background,
+    color: c.textPrimary,
+    backgroundColor: c.background,
     borderRadius: radii.sm,
     paddingHorizontal: spacing(2.5),
     paddingVertical: spacing(2),
   },
-});
+}));

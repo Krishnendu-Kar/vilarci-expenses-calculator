@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, Switch, Text, TextInput, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { Input } from '../components/Input';
 import { Chip } from '../components/Chip';
@@ -10,35 +11,32 @@ import { DateField } from '../components/DateField';
 import { PersonAmountRow } from '../components/PersonAmountRow';
 import { SwipeView } from '../components/SwipeView';
 import { useGroup, useGroups } from '../context/GroupsContext';
+import { useUndo } from '../context/UndoContext';
 import { allocate } from '../lib/split';
+import { isClosed, monthOf } from '../lib/months';
 import { evalAmount, isSum, money, paiseToInput, toPaise } from '../lib/money';
-import { todayISO } from '../lib/format';
+import { monthLabel, todayISO } from '../lib/format';
 import { clearDraft, loadDraft, saveDraft, type ManyForm, type OneForm } from '../lib/drafts';
 import { QuickAddPanel } from './expense/QuickAddPanel';
 import { confirmAction } from '../lib/confirm';
 import { newId } from '../lib/id';
 import { CATEGORIES, categoryOf } from '../data/categories';
-import { colors } from '../theme/colors';
+import { makeStyles, useTheme } from '../theme/ThemeContext';
+import { useI18n } from '../i18n/I18nContext';
 import { font, radii, spacing } from '../theme/tokens';
+import type { Key } from '../i18n';
 import type { CategoryKey, Expense, SplitMode } from '../types';
 import type { ScreenProps } from '../navigation/types';
 
 type CustomMode = Exclude<SplitMode, 'equal'>;
 type Texts = Record<string, string>;
 
-const SPLIT_OPTIONS: { key: SplitMode; label: string }[] = [
-  { key: 'equal', label: 'Equally' },
-  { key: 'exact', label: '₹ Exact' },
-  { key: 'shares', label: 'Shares' },
-  { key: 'percent', label: '%' },
+const SPLIT_OPTIONS: { key: SplitMode; label: Key; help: Key }[] = [
+  { key: 'equal', label: 'expense.mode.equal', help: 'expense.help.equal' },
+  { key: 'exact', label: 'expense.mode.exact', help: 'expense.help.exact' },
+  { key: 'shares', label: 'expense.mode.shares', help: 'expense.help.shares' },
+  { key: 'percent', label: 'expense.mode.percent', help: 'expense.help.percent' },
 ];
-
-const SPLIT_HELP: Record<SplitMode, string> = {
-  equal: 'Everyone picked pays the same.',
-  exact: 'Type what each person owes. It must add up to the total.',
-  shares: 'Give bigger portions more shares, e.g. 2 for someone who ate double.',
-  percent: 'Give each person a percentage. It must add up to 100%.',
-};
 
 /** Basis points → editable text: 3350 → "33.5". */
 const bpToInput = (bp: number) => paiseToInput(bp);
@@ -47,14 +45,19 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
   const { groupId, expenseId } = route.params;
   const group = useGroup(groupId);
   const { saveExpense, deleteExpense } = useGroups();
+  const { showUndo } = useUndo();
+  const styles = useStyles();
+  const { colors, dark } = useTheme();
+  const { t } = useI18n();
   const existing = group?.expenses.find((e) => e.id === expenseId);
   const members = group?.members ?? [];
   const allIds = members.map((m) => m.id);
+  const hostel = group?.kind === 'hostel';
 
   const [title, setTitle] = useState(existing?.title ?? '');
   const [amountText, setAmountText] = useState(existing ? paiseToInput(existing.amount) : '');
   const [category, setCategory] = useState<CategoryKey>(existing?.category ?? 'food');
-  const [date, setDate] = useState(existing?.date ?? todayISO());
+  const [date, setDate] = useState(existing?.date ?? route.params.date ?? todayISO());
   const [note, setNote] = useState(existing?.note ?? '');
 
   const existingPayers = existing ? Object.keys(existing.payers) : [];
@@ -77,6 +80,10 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
     }
     return v;
   });
+  // Hostel/flat groups: on when this expense's monthly repeat is still running.
+  const [repeat, setRepeat] = useState(
+    () => !!existing?.recurringId && !!group?.recurring?.some((r) => r.id === existing.recurringId),
+  );
   const [error, setError] = useState<string | null>(null);
 
   // ---- "One expense" / "Many at once", and drafts (new expenses only) ----
@@ -92,8 +99,8 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
   const finished = useRef(false);
 
   const oneForm: OneForm = useMemo(
-    () => ({ title, amountText, category, date, note, multiPay, payer, payerTexts, mode, selected, values }),
-    [title, amountText, category, date, note, multiPay, payer, payerTexts, mode, selected, values],
+    () => ({ title, amountText, category, date, note, multiPay, payer, payerTexts, mode, selected, values, repeat }),
+    [title, amountText, category, date, note, multiPay, payer, payerTexts, mode, selected, values, repeat],
   );
   // Editing: "Update changes" only lights up once something changed.
   const initialForm = useRef(JSON.stringify(oneForm));
@@ -112,6 +119,7 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
     setMode(f.mode);
     setSelected(f.selected.filter((id) => ids.has(id)));
     setValues(f.values);
+    setRepeat(!!f.repeat && hostel);
   };
 
   useEffect(() => {
@@ -185,7 +193,7 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
       title: '',
       amountText: '',
       category: 'food',
-      date: todayISO(),
+      date: route.params.date ?? todayISO(),
       note: '',
       multiPay: false,
       payer: allIds[0] ?? '',
@@ -193,6 +201,7 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
       mode: 'equal',
       selected: allIds,
       values: { exact: {}, shares: {}, percent: {} },
+      repeat: false,
     });
     many.current = undefined;
     setManyInitial(undefined);
@@ -211,14 +220,16 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
   if (!group) {
     return (
       <ScreenContainer>
-        <Text style={styles.missing}>This group no longer exists.</Text>
+        <Text style={styles.missing}>{t('common.missingGroup')}</Text>
       </ScreenContainer>
     );
   }
 
+  // A closed month's expenses are locked until the month is reopened.
+  const locked = !!existing && isClosed(group, monthOf(existing.date));
+
   // Sums like 48+80+64 are added up; a trailing "+" is ignored while typing.
   const amount = evalAmount(amountText.replace(/[+\-*x×\s]+$/i, '')) ?? 0;
-  const names = Object.fromEntries(members.map((m) => [m.id, m.name]));
   const splitAmong = allIds.filter((id) => selected.includes(id));
   const allSelected = splitAmong.length === allIds.length;
 
@@ -234,8 +245,8 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
     ? allocate(amount, allIds.map((id) => [id, toPaise(values.percent[id] ?? '') ?? 0] as [string, number]).filter(([, w]) => w > 0))
     : {};
 
-  const setValue = (m: CustomMode, id: string, t: string) =>
-    setValues((v) => ({ ...v, [m]: { ...v[m], [id]: t } }));
+  const setValue = (m: CustomMode, id: string, v: string) =>
+    setValues((s) => ({ ...s, [m]: { ...s[m], [id]: v } }));
 
   const changeMode = (m: SplitMode) => {
     setMode(m);
@@ -249,7 +260,7 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
   /** Fills the exact/percent fields with an even split. */
   const fillEvenly = () => {
     if (mode === 'exact') {
-      if (!amount) return setError('Enter the total amount first.');
+      if (!amount) return setError(t('expense.errEnterTotalFirst'));
       const parts = allocate(amount, allIds.map((id) => [id, 1]));
       setValues((v) => ({ ...v, exact: mapValues(parts, paiseToInput) }));
     } else if (mode === 'percent') {
@@ -269,8 +280,10 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
   };
 
   const save = () => {
-    if (amountText.trim() && evalAmount(amountText) == null) return setError("The amount can't be read. Use numbers with + - or x.");
-    if (!amount || amount <= 0) return setError('Enter how much was spent.');
+    if (locked) return;
+    if (amountText.trim() && evalAmount(amountText) == null) return setError(t('expense.errRead'));
+    if (!amount || amount <= 0) return setError(t('expense.errAmount'));
+    if (isClosed(group, monthOf(date))) return setError(t('month.lockedAdd', { month: monthLabel(monthOf(date)) }));
 
     // Who paid
     let payers: Record<string, number> = {};
@@ -279,21 +292,21 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
         const text = payerTexts[m.id]?.trim();
         if (!text) continue;
         const v = toPaise(text);
-        if (v == null) return setError(`${m.name}'s paid amount isn't a valid number.`);
+        if (v == null) return setError(t('expense.errPaidInvalid', { name: m.name }));
         if (v > 0) payers[m.id] = v;
       }
-      if (Object.keys(payers).length === 0) return setError('Enter how much each person paid.');
+      if (Object.keys(payers).length === 0) return setError(t('expense.errPaidEmpty'));
       const paid = Object.values(payers).reduce((s, v) => s + v, 0);
-      if (paid !== amount) return setError(`Paid amounts add up to ${money(paid)}, but the expense is ${money(amount)}.`);
+      if (paid !== amount) return setError(t('expense.errPaidSum', { paid: money(paid), amount: money(amount) }));
     } else {
-      if (!payer) return setError('Pick who paid.');
+      if (!payer) return setError(t('expense.errPickPayer'));
       payers = { [payer]: amount };
     }
 
     // How it's split
     let split: Pick<Expense, 'splitMode' | 'splitAmong' | 'splitValues'>;
     if (mode === 'equal') {
-      if (splitAmong.length === 0) return setError('Pick at least one person to split with.');
+      if (splitAmong.length === 0) return setError(t('expense.errPickSplit'));
       split = { splitMode: 'equal', splitAmong };
     } else {
       const parsed: Record<string, number> = {};
@@ -301,46 +314,55 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
         const text = values[mode][m.id]?.trim();
         if (!text) continue;
         const v = mode === 'shares' ? (/^\d+$/.test(text) ? parseInt(text, 10) : null) : toPaise(text);
-        if (v == null) return setError(`${m.name}'s ${mode === 'shares' ? 'shares' : 'amount'} isn't a valid number.`);
+        if (v == null) return setError(t(mode === 'shares' ? 'expense.errShares' : 'expense.errValue', { name: m.name }));
         if (v > 0) parsed[m.id] = v;
       }
       const ids = Object.keys(parsed);
-      if (ids.length === 0) return setError('Give at least one person a part of this expense.');
+      if (ids.length === 0) return setError(t('expense.errNoPart'));
       const total = Object.values(parsed).reduce((s, v) => s + v, 0);
       if (mode === 'exact' && total !== amount) {
-        return setError(`Shares add up to ${money(total)}, but the expense is ${money(amount)}.`);
+        return setError(t('expense.errExactSum', { total: money(total), amount: money(amount) }));
       }
       if (mode === 'percent' && total !== 10000) {
-        return setError(`Percentages add up to ${bpToInput(total)}%, they need to make 100%.`);
+        return setError(t('expense.errPercentSum', { total: bpToInput(total) }));
       }
       split = { splitMode: mode, splitAmong: allIds.filter((id) => id in parsed), splitValues: parsed };
     }
 
     const trimmedNote = note.trim();
-    saveExpense(group.id, {
-      id: existing?.id ?? newId(),
-      title: title.trim() || categoryOf(category).label,
-      amount,
-      category,
-      payers,
-      ...split,
-      date,
-      ...(trimmedNote ? { note: trimmedNote } : {}),
-      createdAt: existing?.createdAt ?? Date.now(),
-    });
+    saveExpense(
+      group.id,
+      {
+        id: existing?.id ?? newId(),
+        title: title.trim() || categoryOf(category).label,
+        amount,
+        category,
+        payers,
+        ...split,
+        date,
+        ...(trimmedNote ? { note: trimmedNote } : {}),
+        ...(existing?.recurringId ? { recurringId: existing.recurringId } : {}),
+        ...(existing?.pinnedAt != null ? { pinnedAt: existing.pinnedAt } : {}),
+        ...(existing?.archivedAt != null ? { archivedAt: existing.archivedAt } : {}),
+        createdAt: existing?.createdAt ?? Date.now(),
+      },
+      hostel ? { repeat } : undefined,
+    );
     finish();
   };
 
   const remove = () => {
-    if (!existing) return;
-    confirmAction('Delete expense?', `"${existing.title}" will be removed.`, 'Delete', () => {
+    if (!existing || locked) return;
+    confirmAction(t('expense.deleteTitle'), t('expense.deleteBody', { name: existing.title }), t('common.delete'), () => {
       deleteExpense(group.id, existing.id);
       navigation.goBack();
+      showUndo(t('expense.deleted', { name: existing.title }), () => saveExpense(group.id, existing));
     });
   };
 
   const perHead = amount && splitAmong.length ? Math.floor(amount / splitAmong.length) : 0;
   const uneven = !!amount && splitAmong.length > 0 && amount % splitAmong.length !== 0;
+  const repeatDay = Number(date.slice(8, 10));
 
   return (
     <ScreenContainer>
@@ -349,8 +371,8 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
           <View style={styles.modeSwitch}>
             <Segmented
               options={[
-                { key: 'one', label: 'One expense' },
-                { key: 'many', label: 'Many at once' },
+                { key: 'one', label: t('expense.one') },
+                { key: 'many', label: t('expense.many') },
               ]}
               value={formMode}
               onChange={setFormMode}
@@ -359,11 +381,28 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
         ) : null}
 
         {restoredAt ? (
-          <View style={styles.draftBanner}>
-            <Text style={styles.draftText}>Draft restored from where you left off.</Text>
+          <View style={styles.banner}>
+            <Text style={styles.bannerText}>{t('expense.draftRestored')}</Text>
             <Pressable onPress={discardDraft} hitSlop={8}>
-              <Text style={styles.link}>Discard</Text>
+              <Text style={styles.link}>{t('expense.discard')}</Text>
             </Pressable>
+          </View>
+        ) : null}
+
+        {locked ? (
+          <View style={styles.banner}>
+            <Ionicons name="lock-closed" size={16} color={colors.textSecondary} />
+            <View style={styles.flex}>
+              <Text style={styles.bannerTitle}>{t('month.lockedTitle', { month: monthLabel(monthOf(existing!.date)) })}</Text>
+              <Text style={styles.bannerText}>{t('month.lockedBody')}</Text>
+            </View>
+          </View>
+        ) : null}
+
+        {existing?.archivedAt != null ? (
+          <View style={styles.banner}>
+            <Ionicons name="archive-outline" size={16} color={colors.textSecondary} />
+            <Text style={styles.bannerText}>{t('expense.archivedBanner')}</Text>
           </View>
         ) : null}
 
@@ -372,46 +411,47 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
             <QuickAddPanel key={panelKey} group={group} initial={manyInitial} onChange={onManyChange} onDone={finish} />
           ) : null
         ) : (
-          <>
+          <View pointerEvents={locked ? 'none' : 'auto'} style={locked && styles.lockedForm}>
             <View style={styles.amountCard}>
               <Text style={styles.rupee}>₹</Text>
               <TextInput
                 style={styles.amountInput}
                 value={amountText}
-                onChangeText={(t) => setAmountText(t.replace(/[^0-9.+\-*x×]/gi, ''))}
+                onChangeText={(v) => setAmountText(v.replace(/[^0-9.+\-*x×]/gi, ''))}
                 placeholder="0"
                 placeholderTextColor={colors.border}
                 keyboardType="decimal-pad"
+                keyboardAppearance={dark ? 'dark' : 'light'}
                 autoFocus={isNew && formMode === 'one' && !restoredAt}
                 maxLength={60}
                 multiline
               />
               {/* The number keyboard has no "+", so sums get a button. */}
               <Pressable
-                onPress={() => setAmountText((t) => (t && !/[+\-*x×]$/i.test(t) ? `${t}+` : t))}
+                onPress={() => setAmountText((v) => (v && !/[+\-*x×]$/i.test(v) ? `${v}+` : v))}
                 style={styles.plusBtn}
                 hitSlop={6}
-                accessibilityLabel="Add another amount"
+                accessibilityLabel={t('expense.addAnother')}
               >
                 <Text style={styles.plusText}>+</Text>
               </Pressable>
             </View>
             {isSum(amountText) ? (
-              <Text style={styles.sumHint}>{amount ? `= ${money(amount)}` : "Can't add that up yet"}</Text>
+              <Text style={styles.sumHint}>{amount ? t('expense.sumEquals', { amount: money(amount) }) : t('expense.sumBad')}</Text>
             ) : null}
 
             <Input
-              label="What was it for?"
-              placeholder="e.g. Boat ride, Rice, Ice cream"
+              label={t('expense.what')}
+              placeholder={t('expense.whatPlaceholder')}
               value={title}
               onChangeText={setTitle}
               maxLength={50}
             />
 
-            <SectionLabel>Date</SectionLabel>
+            <SectionLabel>{t('expense.date')}</SectionLabel>
             <DateField value={date} onChange={setDate} />
 
-            <SectionLabel>Category</SectionLabel>
+            <SectionLabel>{t('expense.category')}</SectionLabel>
             <View style={styles.chips}>
               {CATEGORIES.map((c) => (
                 <Chip key={c.key} label={c.label} icon={c.icon} selected={category === c.key} onPress={() => setCategory(c.key)} />
@@ -420,9 +460,9 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
 
             {/* ---------- Paid by ---------- */}
             <View style={styles.sectionHead}>
-              <SectionLabel>Paid by</SectionLabel>
+              <SectionLabel>{t('expense.paidBy')}</SectionLabel>
               <Pressable onPress={togglePayerMode} hitSlop={8}>
-                <Text style={styles.link}>{multiPay ? 'One person paid' : 'More than one person paid?'}</Text>
+                <Text style={styles.link}>{multiPay ? t('expense.onePaid') : t('expense.multiPaid')}</Text>
               </Pressable>
             </View>
             {multiPay ? (
@@ -433,7 +473,7 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
                     name={m.name}
                     prefix="₹"
                     value={payerTexts[m.id] ?? ''}
-                    onChangeText={(t) => setPayerTexts((s) => ({ ...s, [m.id]: t }))}
+                    onChangeText={(v) => setPayerTexts((s) => ({ ...s, [m.id]: v }))}
                   />
                 ))}
                 <Remaining assigned={payerSum} total={amount} format={money} />
@@ -447,8 +487,8 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
             )}
 
             {/* ---------- Split ---------- */}
-            <SectionLabel>Split</SectionLabel>
-            <Segmented options={SPLIT_OPTIONS} value={mode} onChange={changeMode} />
+            <SectionLabel>{t('expense.split')}</SectionLabel>
+            <Segmented options={SPLIT_OPTIONS.map((o) => ({ key: o.key, label: t(o.label) }))} value={mode} onChange={changeMode} />
             {/* Swipe left/right here to change the split mode. */}
             <SwipeView
               index={SPLIT_OPTIONS.findIndex((o) => o.key === mode)}
@@ -456,18 +496,20 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
               onIndexChange={(i) => changeMode(SPLIT_OPTIONS[i].key)}
               fill={false}
             >
-              <Text style={styles.help}>{SPLIT_HELP[mode]}</Text>
+              <Text style={styles.help}>{t(SPLIT_OPTIONS.find((o) => o.key === mode)!.help)}</Text>
 
               {mode === 'equal' ? (
                 <View style={styles.box}>
                   <View style={styles.boxHead}>
                     <Text style={styles.boxInfo}>
                       {splitAmong.length
-                        ? `${splitAmong.length} of ${members.length} people${amount ? ` · ${uneven ? '~' : ''}${money(perHead)} each` : ''}`
-                        : 'Nobody selected'}
+                        ? `${t('expense.pickedOf', { picked: splitAmong.length, total: members.length })}${
+                            amount ? ` · ${t('expense.each', { amount: `${uneven ? '~' : ''}${money(perHead)}` })}` : ''
+                          }`
+                        : t('expense.nobody')}
                     </Text>
                     <Pressable onPress={() => setSelected(allSelected ? [] : allIds)} hitSlop={8}>
-                      <Text style={styles.link}>{allSelected ? 'Clear' : 'Everyone'}</Text>
+                      <Text style={styles.link}>{allSelected ? t('common.clear') : t('expense.everyone')}</Text>
                     </Pressable>
                   </View>
                   <View style={styles.chipsTight}>
@@ -487,7 +529,7 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
                 <View style={styles.box}>
                   {mode !== 'shares' ? (
                     <Pressable onPress={fillEvenly} hitSlop={8} style={styles.fill}>
-                      <Text style={styles.link}>Fill evenly</Text>
+                      <Text style={styles.link}>{t('expense.fillEvenly')}</Text>
                     </Pressable>
                   ) : null}
                   {members.map((m) => (
@@ -495,7 +537,7 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
                       key={m.id}
                       name={m.name}
                       value={customTexts[m.id] ?? ''}
-                      onChangeText={(t) => setValue(mode, m.id, t)}
+                      onChangeText={(v) => setValue(mode, m.id, v)}
                       prefix={mode === 'exact' ? '₹' : undefined}
                       suffix={mode === 'percent' ? '%' : mode === 'shares' ? 'x' : undefined}
                       integer={mode === 'shares'}
@@ -513,8 +555,10 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
                   {mode === 'shares' ? (
                     <Text style={[styles.remaining, styles.muted]}>
                       {totalShares
-                        ? `${totalShares} shares${amount ? ` · ${money(Math.floor(amount / totalShares))} per share` : ''}`
-                        : 'Give someone at least 1 share'}
+                        ? `${t('count.share', { count: totalShares })}${
+                            amount ? ` · ${t('expense.perShare', { amount: money(Math.floor(amount / totalShares)) })}` : ''
+                          }`
+                        : t('expense.needShare')}
                     </Text>
                   ) : null}
                 </View>
@@ -522,8 +566,8 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
             </SwipeView>
 
             <Input
-              label="Note (optional)"
-              placeholder="Anything to remember, e.g. bill no. or who it was for"
+              label={t('expense.note')}
+              placeholder={t('expense.notePlaceholder')}
               value={note}
               onChangeText={setNote}
               maxLength={200}
@@ -531,16 +575,37 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
               style={styles.note}
             />
 
+            {hostel ? (
+              <View style={styles.repeatRow}>
+                <Ionicons name="repeat" size={20} color={colors.tint} />
+                <View style={styles.flex}>
+                  <Text style={styles.repeatTitle}>{t('expense.repeat')}</Text>
+                  <Text style={styles.repeatHint}>
+                    {repeat && existing?.recurringId ? t('expense.repeatEditHint') : t('expense.repeatHint', { day: repeatDay })}
+                  </Text>
+                </View>
+                <Switch
+                  value={repeat}
+                  onValueChange={setRepeat}
+                  trackColor={{ false: colors.border, true: colors.primaryLight }}
+                  thumbColor={repeat ? colors.primary : colors.surface}
+                  ios_backgroundColor={colors.border}
+                />
+              </View>
+            ) : null}
+
             {error ? <Text style={styles.error}>{error}</Text> : null}
 
             <PrimaryButton
-              label={existing ? 'Update changes' : 'Add expense'}
+              label={existing ? t('expense.update') : t('expense.add')}
               onPress={save}
-              disabled={!!existing && !dirty}
+              disabled={locked || (!!existing && !dirty)}
               style={styles.saveBtn}
             />
-            {existing ? <PrimaryButton label="Delete expense" variant="danger" onPress={remove} style={styles.deleteBtn} /> : null}
-          </>
+            {existing ? (
+              <PrimaryButton label={t('expense.delete')} variant="danger" onPress={remove} disabled={locked} style={styles.deleteBtn} />
+            ) : null}
+          </View>
         )}
       </ScrollView>
     </ScreenContainer>
@@ -548,16 +613,18 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
 }
 
 function Remaining({ assigned, total, format }: { assigned: number; total: number; format: (n: number) => string }) {
+  const styles = useStyles();
+  const { t } = useI18n();
   const left = total - assigned;
   return (
     <Text style={[styles.remaining, left === 0 && total > 0 ? styles.ok : styles.bad]}>
       {total === 0
-        ? 'Enter the total first'
+        ? t('expense.enterTotal')
         : left === 0
-          ? 'All of it is assigned ✓'
+          ? t('expense.allAssigned')
           : left > 0
-            ? `${format(left)} left to assign`
-            : `${format(-left)} too much`}
+            ? t('expense.left', { amount: format(left) })
+            : t('expense.tooMuch', { amount: format(-left) })}
     </Text>
   );
 }
@@ -570,50 +637,53 @@ function sumTexts(texts: Texts, parse: (t: string) => number | null) {
   return Object.values(texts).reduce((s, t) => s + (parse(t) ?? 0), 0);
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((c) => ({
   content: { padding: spacing(5), paddingBottom: spacing(12) },
-  missing: { textAlign: 'center', marginTop: spacing(16), color: colors.textSecondary },
+  missing: { textAlign: 'center', marginTop: spacing(16), color: c.textSecondary },
+  flex: { flex: 1 },
   amountCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surface,
+    backgroundColor: c.surface,
     borderRadius: radii.xl,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: c.border,
     paddingVertical: spacing(5),
     marginBottom: spacing(5),
   },
   modeSwitch: { marginBottom: spacing(4) },
-  draftBanner: {
+  banner: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing(3),
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: c.surfaceAlt,
     borderRadius: radii.md,
     paddingHorizontal: spacing(3.5),
     paddingVertical: spacing(2.5),
     marginBottom: spacing(4),
   },
-  draftText: { flex: 1, fontSize: font.sm + 1, color: colors.textPrimary },
+  bannerTitle: { fontSize: font.sm + 1, fontWeight: '700', color: c.textPrimary },
+  bannerText: { flex: 1, fontSize: font.sm + 1, color: c.textPrimary },
+  lockedForm: { opacity: 0.55 },
   plusBtn: {
     position: 'absolute',
     right: spacing(4),
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: c.surfaceAlt,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  plusText: { fontSize: 24, fontWeight: '700', color: colors.primary, marginTop: -2 },
-  sumHint: { textAlign: 'center', fontSize: font.md, fontWeight: '700', color: colors.primary, marginTop: -spacing(3), marginBottom: spacing(5) },
-  rupee: { fontSize: 34, fontWeight: '700', color: colors.textSecondary, marginRight: spacing(1) },
+  plusText: { fontSize: 24, fontWeight: '700', color: c.tint, marginTop: -2 },
+  sumHint: { textAlign: 'center', fontSize: font.md, fontWeight: '700', color: c.tint, marginTop: -spacing(3), marginBottom: spacing(5) },
+  rupee: { fontSize: 34, fontWeight: '700', color: c.textSecondary, marginRight: spacing(1) },
   amountInput: {
     fontSize: 42,
     fontWeight: '800',
-    color: colors.textPrimary,
+    color: c.textPrimary,
     minWidth: 80,
     maxWidth: '75%',
     textAlign: 'center',
@@ -621,13 +691,13 @@ const styles = StyleSheet.create({
   },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing(2), marginBottom: spacing(5) },
   chipsTight: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing(2) },
-  sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  help: { fontSize: font.sm, color: colors.textSecondary, marginTop: spacing(2) },
+  sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: spacing(2) },
+  help: { fontSize: font.sm, color: c.textSecondary, marginTop: spacing(2) },
   box: {
-    backgroundColor: colors.surface,
+    backgroundColor: c.surface,
     borderRadius: radii.lg,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: c.border,
     padding: spacing(3.5),
     marginTop: spacing(2),
     marginBottom: spacing(5),
@@ -638,15 +708,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing(3),
   },
-  boxInfo: { fontSize: font.sm + 1, color: colors.textSecondary, fontWeight: '600', flex: 1 },
+  boxInfo: { fontSize: font.sm + 1, color: c.textSecondary, fontWeight: '600', flex: 1 },
   fill: { alignSelf: 'flex-end', marginBottom: spacing(1) },
-  link: { color: colors.primary, fontWeight: '700', fontSize: font.sm + 1 },
+  link: { color: c.tint, fontWeight: '700', fontSize: font.sm + 1 },
   remaining: { marginTop: spacing(3), fontSize: font.sm + 1, fontWeight: '700', textAlign: 'right' },
-  ok: { color: colors.success },
-  bad: { color: colors.danger },
-  muted: { color: colors.textSecondary },
+  ok: { color: c.success },
+  bad: { color: c.danger },
+  muted: { color: c.textSecondary },
   note: { minHeight: 70, textAlignVertical: 'top' },
-  error: { color: colors.danger, fontSize: font.sm + 1, marginBottom: spacing(3), fontWeight: '600' },
+  repeatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing(3),
+    backgroundColor: c.surface,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: c.border,
+    padding: spacing(3.5),
+    marginBottom: spacing(4),
+  },
+  repeatTitle: { fontSize: font.md, fontWeight: '700', color: c.textPrimary },
+  repeatHint: { fontSize: font.sm, color: c.textSecondary, marginTop: 2 },
+  error: { color: c.danger, fontSize: font.sm + 1, marginBottom: spacing(3), fontWeight: '600' },
   saveBtn: { marginTop: spacing(2) },
   deleteBtn: { marginTop: spacing(3) },
-});
+}));

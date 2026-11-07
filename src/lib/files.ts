@@ -4,6 +4,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { File, Paths } from 'expo-file-system';
 import { notify } from './confirm';
+import { translate } from '../i18n';
 
 // Everything that leaves or enters the app goes through here, so screens
 // don't care whether they're on a phone or in a browser.
@@ -38,7 +39,7 @@ export async function sharePdf(fileName: string, html: string, beforeShare?: Bef
   if (Platform.OS === 'web') {
     const w = window.open('', '_blank');
     if (!w) {
-      notify('Pop-up blocked', 'Allow pop-ups for this site to save the PDF.');
+      notify(translate('files.popupBlocked'), translate('files.popupBody'));
       return;
     }
     w.document.write(html);
@@ -51,7 +52,7 @@ export async function sharePdf(fileName: string, html: string, beforeShare?: Bef
   // read inside Expo Go (moving it fails with "Missing 'READ' permission").
   // So take the PDF bytes instead and write our own, properly named file.
   const { base64 } = await Print.printToFileAsync({ html, base64: true });
-  if (!base64) throw new Error("The PDF couldn't be created.");
+  if (!base64) throw new Error(translate('files.pdfFailed'));
   const named = new File(Paths.cache, fileName);
   named.create({ overwrite: true });
   named.writeSync(base64, { encoding: 'base64' });
@@ -66,7 +67,7 @@ export async function shareMessage(message: string, beforeShare?: BeforeShare) {
       await navigator.share({ text: message }).catch(() => {});
     } else {
       await navigator.clipboard.writeText(message);
-      notify('Copied', 'The summary is on your clipboard. Paste it into any chat.');
+      notify(translate('files.copied'), translate('files.copiedBody'));
     }
     return;
   }
@@ -80,14 +81,14 @@ export async function pickTextFile(): Promise<{ name: string; text: string } | n
   const result = await DocumentPicker.getDocumentAsync({ type: '*/*', copyToCacheDirectory: true, multiple: false });
   if (result.canceled || !result.assets?.length) return null;
   const asset = result.assets[0];
-  if (asset.size && asset.size > 5 * 1024 * 1024) throw new Error('That file is too big to be a Vilarci Split backup.');
+  if (asset.size && asset.size > 5 * 1024 * 1024) throw new Error(translate('files.tooBig'));
   const text = Platform.OS === 'web' && asset.file ? await asset.file.text() : await new File(asset.uri).text();
   return { name: asset.name, text };
 }
 
 async function shareUri(uri: string, mimeType: string, title: string, UTI?: string) {
   if (!(await Sharing.isAvailableAsync())) {
-    notify('Sharing unavailable', "This device can't open the share sheet.");
+    notify(translate('files.noShare'), translate('files.noShareBody'));
     return;
   }
   await Sharing.shareAsync(uri, { mimeType, dialogTitle: title, ...(UTI ? { UTI } : {}) });

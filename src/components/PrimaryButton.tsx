@@ -1,6 +1,6 @@
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, type StyleProp, type ViewStyle } from 'react-native';
-import { colors } from '../theme/colors';
+import { Text, TouchableOpacity, type StyleProp, type ViewStyle } from 'react-native';
+import { makeStyles } from '../theme/ThemeContext';
 import { font, radii } from '../theme/tokens';
 
 interface Props {
@@ -12,6 +12,7 @@ interface Props {
 }
 
 export function PrimaryButton({ label, onPress, disabled, variant = 'solid', style }: Props) {
+  const styles = useStyles();
   return (
     <TouchableOpacity
       onPress={onPress}
@@ -26,35 +27,36 @@ export function PrimaryButton({ label, onPress, disabled, variant = 'solid', sty
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((c) => ({
   button: {
-    backgroundColor: colors.primary,
+    backgroundColor: c.primary,
     borderRadius: radii.lg,
     paddingVertical: 16,
+    paddingHorizontal: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: colors.primary,
+    shadowColor: c.primary,
     shadowOpacity: 0.25,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 6 },
     elevation: 3,
   },
   outline: {
-    backgroundColor: colors.surface,
+    backgroundColor: c.surface,
     borderWidth: 1.5,
-    borderColor: colors.primary,
+    borderColor: c.tint,
     shadowOpacity: 0,
     elevation: 0,
   },
   danger: {
-    backgroundColor: colors.surface,
+    backgroundColor: c.surface,
     borderWidth: 1.5,
-    borderColor: colors.danger,
+    borderColor: c.danger,
     shadowOpacity: 0,
     elevation: 0,
   },
   disabled: { opacity: 0.5 },
-  label: { color: colors.white, fontSize: font.md + 1, fontWeight: '700', letterSpacing: 0.3 },
-  labelOutline: { color: colors.primary },
-  labelDanger: { color: colors.danger },
-});
+  label: { color: c.onPrimary, fontSize: font.md + 1, fontWeight: '700', letterSpacing: 0.3, textAlign: 'center' },
+  labelOutline: { color: c.tint },
+  labelDanger: { color: c.danger },
+}));

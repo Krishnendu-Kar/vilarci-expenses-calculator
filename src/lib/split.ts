@@ -45,6 +45,11 @@ export function expenseShares(e: Expense): Record<string, number> {
   }
 }
 
+/** Archived expenses are kept as a record but left out of every total and balance. */
+export function counted(e: Expense) {
+  return e.archivedAt == null;
+}
+
 export interface MemberBalance {
   memberId: string;
   /** Total this member paid for the group. */
@@ -64,6 +69,7 @@ export function computeBalances(group: Group): MemberBalance[] {
     map.set(m.id, { memberId: m.id, paid: 0, share: 0, sent: 0, received: 0, net: 0 });
   }
   for (const e of group.expenses) {
+    if (!counted(e)) continue;
     for (const [id, amt] of Object.entries(e.payers)) {
       const b = map.get(id);
       if (b) b.paid += amt;
@@ -124,7 +130,7 @@ export function suggestTransfers(balances: MemberBalance[]): Transfer[] {
 }
 
 export function groupTotal(group: Group) {
-  return group.expenses.reduce((sum, e) => sum + e.amount, 0);
+  return group.expenses.reduce((sum, e) => (counted(e) ? sum + e.amount : sum), 0);
 }
 
 /** Newest day first; same day, newest entry first. */
@@ -134,7 +140,7 @@ export function sortExpenses(expenses: Expense[]) {
 
 export function categoryTotals(group: Group): { key: CategoryKey; amount: number; count: number }[] {
   const map = new Map<CategoryKey, { amount: number; count: number }>();
-  for (const e of group.expenses) {
+  for (const e of group.expenses.filter(counted)) {
     const t = map.get(e.category) ?? { amount: 0, count: 0 };
     t.amount += e.amount;
     t.count += 1;
@@ -146,14 +152,16 @@ export function categoryTotals(group: Group): { key: CategoryKey; amount: number
 /** Spending per day, oldest first. */
 export function dailyTotals(group: Group): { date: string; amount: number }[] {
   const map = new Map<string, number>();
-  for (const e of group.expenses) map.set(e.date, (map.get(e.date) ?? 0) + e.amount);
+  for (const e of group.expenses.filter(counted)) map.set(e.date, (map.get(e.date) ?? 0) + e.amount);
   return [...map.entries()].map(([date, amount]) => ({ date, amount })).sort((a, b) => a.date.localeCompare(b.date));
 }
 
-/** True when removing the member would break an expense or payment. */
+/** True when removing the member would break an expense, a monthly repeat or a payment. */
 export function memberIsInvolved(group: Group, memberId: string) {
+  const uses = (e: Pick<Expense, 'payers' | 'splitAmong'>) => memberId in e.payers || e.splitAmong.includes(memberId);
   return (
-    group.expenses.some((e) => memberId in e.payers || e.splitAmong.includes(memberId)) ||
+    group.expenses.some(uses) ||
+    (group.recurring ?? []).some(uses) ||
     group.payments.some((p) => p.from === memberId || p.to === memberId)
   );
 }

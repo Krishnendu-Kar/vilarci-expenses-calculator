@@ -1,15 +1,18 @@
-import type { CategoryKey, Expense, Group, GroupKind, Member, Payment, SplitMode } from '../types';
+import type { CategoryKey, Expense, Group, GroupKind, Member, Payment, Person, Recurring, SplitMode } from '../types';
 import { toISODate } from './format';
 
 /**
  * Turns anything that claims to be a list of groups (saved data from an older
- * version, or a file someone imported) into valid v2 groups. Anything that
+ * version, or a file someone imported) into valid groups. Anything that
  * can't be trusted is dropped and counted, never half-loaded.
  *
  * v1 → v2: `paidBy: id` became `payers: {id: amount}`, `exactShares` became
  * `splitValues`, and expenses gained a `date`.
+ * v2 → v3: hostel groups gained `closedMonths` and `recurring`; expenses
+ * gained optional `recurringId`, `pinnedAt` and `archivedAt`. Nothing to
+ * convert; v2 data is valid v3.
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export interface SanitizeResult {
   groups: Group[];
@@ -21,6 +24,7 @@ const KINDS: GroupKind[] = ['trip', 'hostel', 'other'];
 const CATEGORIES: CategoryKey[] = ['food', 'travel', 'stay', 'groceries', 'fun', 'shopping', 'other'];
 const MODES: SplitMode[] = ['equal', 'exact', 'shares', 'percent'];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -79,6 +83,17 @@ function sanitizeGroup(g: unknown, counter: { skipped: number }): Group | null {
     }
   }
 
+  const closedMonths = Array.isArray(g.closedMonths)
+    ? [...new Set(g.closedMonths.filter((m): m is string => typeof m === 'string' && MONTH_RE.test(m)))].sort()
+    : [];
+
+  const recurring: Recurring[] = [];
+  for (const r of Array.isArray(g.recurring) ? g.recurring : []) {
+    const clean = sanitizeRecurring(r, ids);
+    if (clean && !recurring.some((x) => x.id === clean.id)) recurring.push(clean);
+    else counter.skipped++;
+  }
+
   const now = Date.now();
   return {
     id: g.id,
@@ -87,13 +102,19 @@ function sanitizeGroup(g: unknown, counter: { skipped: number }): Group | null {
     members,
     expenses,
     payments,
+    // Only present when used, so older groups stay exactly as they were.
+    ...(closedMonths.length ? { closedMonths } : {}),
+    ...(recurring.length ? { recurring } : {}),
     createdAt: typeof g.createdAt === 'number' ? g.createdAt : now,
     updatedAt: typeof g.updatedAt === 'number' ? g.updatedAt : now,
   };
 }
 
-function sanitizeExpense(e: unknown, ids: Set<string>): Expense | null {
-  if (!isObj(e) || !isStr(e.id) || !isPosInt(e.amount)) return null;
+type Money = Pick<Expense, 'amount' | 'payers' | 'splitMode' | 'splitAmong' | 'splitValues' | 'category' | 'title'>;
+
+/** The fields an expense and a monthly repeat share: amount, who paid, the split. */
+function sanitizeMoney(e: Obj, ids: Set<string>): Money | null {
+  if (!isPosInt(e.amount)) return null;
   const amount = e.amount;
 
   // v1 stored a single payer id.
@@ -124,10 +145,8 @@ function sanitizeExpense(e: unknown, ids: Set<string>): Expense | null {
     if (splitMode === 'percent' && sum(splitValues) !== 10000) return null;
   }
 
-  const createdAt = typeof e.createdAt === 'number' ? e.createdAt : Date.now();
   const category = CATEGORIES.includes(e.category as CategoryKey) ? (e.category as CategoryKey) : 'other';
   return {
-    id: e.id,
     title: (isStr(e.title) ? e.title : 'Expense').trim().slice(0, 50) || 'Expense',
     amount,
     category,
@@ -135,8 +154,61 @@ function sanitizeExpense(e: unknown, ids: Set<string>): Expense | null {
     splitMode,
     splitAmong,
     ...(splitValues ? { splitValues } : {}),
+  };
+}
+
+function sanitizeExpense(e: unknown, ids: Set<string>): Expense | null {
+  if (!isObj(e) || !isStr(e.id)) return null;
+  const money = sanitizeMoney(e, ids);
+  if (!money) return null;
+  const createdAt = typeof e.createdAt === 'number' ? e.createdAt : Date.now();
+  return {
+    id: e.id,
+    title: money.title,
+    amount: money.amount,
+    category: money.category,
+    payers: money.payers,
+    splitMode: money.splitMode,
+    splitAmong: money.splitAmong,
+    ...(money.splitValues ? { splitValues: money.splitValues } : {}),
     date: typeof e.date === 'string' && DATE_RE.test(e.date) ? e.date : toISODate(new Date(createdAt)),
     ...(isStr(e.note) ? { note: e.note.slice(0, 200) } : {}),
+    ...(isStr(e.recurringId) ? { recurringId: e.recurringId } : {}),
+    ...(typeof e.pinnedAt === 'number' ? { pinnedAt: e.pinnedAt } : {}),
+    ...(typeof e.archivedAt === 'number' ? { archivedAt: e.archivedAt } : {}),
     createdAt,
   };
+}
+
+function sanitizeRecurring(r: unknown, ids: Set<string>): Recurring | null {
+  if (!isObj(r) || !isStr(r.id) || !Number.isInteger(r.day) || (r.day as number) < 1 || (r.day as number) > 31) return null;
+  if (typeof r.lastMonth !== 'string' || !MONTH_RE.test(r.lastMonth)) return null;
+  const money = sanitizeMoney(r, ids);
+  if (!money) return null;
+  return {
+    id: r.id,
+    title: money.title,
+    amount: money.amount,
+    category: money.category,
+    payers: money.payers,
+    splitMode: money.splitMode,
+    splitAmong: money.splitAmong,
+    ...(money.splitValues ? { splitValues: money.splitValues } : {}),
+    ...(isStr(r.note) ? { note: r.note.slice(0, 200) } : {}),
+    day: r.day as number,
+    lastMonth: r.lastMonth,
+    createdAt: typeof r.createdAt === 'number' ? r.createdAt : Date.now(),
+  };
+}
+
+/** The People directory as stored; anything malformed is dropped. */
+export function sanitizePeople(raw: unknown): Person[] {
+  if (!Array.isArray(raw)) return [];
+  const out: Person[] = [];
+  for (const p of raw) {
+    if (isObj(p) && isStr(p.id) && isStr(p.name) && p.name.trim() && !out.some((x) => x.id === p.id)) {
+      out.push({ id: p.id, name: p.name.trim().slice(0, 30), createdAt: typeof p.createdAt === 'number' ? p.createdAt : 0 });
+    }
+  }
+  return out;
 }

@@ -1,5 +1,6 @@
 import type { CategoryKey, Expense, Member } from '../types';
 import { toPaise } from './money';
+import { translate } from '../i18n';
 
 // "Many at once": reads expenses the way people type them in a group chat,
 // in English or Banglish, and turns them into draft expenses to review.
@@ -101,7 +102,7 @@ export function parseQuickAdd(text: string, members: Member[] = []): QuickParse 
 
     const toks = tokenize(content);
     if (!toks.some((t) => t.t === 'num')) {
-      errors.push({ line, message: `No amounts found in "${clip(content)}".` });
+      errors.push({ line, message: translate('quick.noAmounts', { text: clip(content) }) });
       return;
     }
 
@@ -155,7 +156,7 @@ export function parseQuickAdd(text: string, members: Member[] = []): QuickParse 
         else if (s.names.length === 0) payer = lastPayer; // a wrapped line
         else payer = null; // "Krish+Tamal 50": who paid? asked in the preview
         if (s.names.length === 0 && !lastPayer) {
-          errors.push({ line, message: 'Start the line with who paid, e.g. "Krish - 48, 80".' });
+          errors.push({ line, message: translate('quick.startWithPayer') });
           continue;
         }
         if (payer) lastPayer = payer;
@@ -253,15 +254,15 @@ function segment(toks: Tok[], skip: Set<number>, isName: (lw: string) => boolean
     seenNumber = true;
     const amount = toPaise(tok.raw);
     if (amount == null) {
-      problems.push(`"${tok.raw}" has too many decimals (use up to 2).`);
+      problems.push(translate('quick.tooManyDecimals', { amount: tok.raw }));
       return;
     }
     if (amount === 0) {
-      problems.push('An amount of 0 was skipped.');
+      problems.push(translate('quick.zero'));
       return;
     }
     if (tok.forCount === 0) {
-      problems.push(`"${tok.raw}(0)" is for 0 people.`);
+      problems.push(translate('quick.forZero', { amount: tok.raw }));
       return;
     }
     const item: Item = { amount, ...(tok.forCount ? { forCount: tok.forCount } : {}) };
@@ -277,7 +278,7 @@ function segment(toks: Tok[], skip: Set<number>, isName: (lw: string) => boolean
   });
 
   if (pending.length && lastItem && !(lastItem as Item).label) (lastItem as Item).label = pending.join(' ');
-  else if (pending.length) problems.push(`"${clip(pending.join(' '))}" isn't an amount or a name in this group.`);
+  else if (pending.length) problems.push(translate('quick.unknownWord', { text: clip(pending.join(' ')) }));
   flushHead();
   if (cur.items.length || cur.names.length) segments.push(cur);
   for (const s of segments) for (const it of s.items) if (it.label) it.label = it.label.slice(0, 50);
@@ -350,9 +351,9 @@ export function resolveDrafts(drafts: Draft[], nameToId: Record<string, string |
 
 /** Why a row can't be saved yet, or null when it's ready. */
 export function rowProblem(row: QuickRow): string | null {
-  if (!row.payer) return 'Pick who paid';
-  if (row.needCount && (row.among?.length ?? 0) !== row.needCount) return `Pick the ${row.needCount} people it was for`;
-  if (row.among && row.among.length === 0) return 'Pick who it was for';
+  if (!row.payer) return translate('quick.pickPayer');
+  if (row.needCount && (row.among?.length ?? 0) !== row.needCount) return translate('quick.pickN', { count: row.needCount });
+  if (row.among && row.among.length === 0) return translate('quick.pickFor');
   return null;
 }
 

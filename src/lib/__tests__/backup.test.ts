@@ -2,7 +2,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildBackup, mergeGroups, parseBackup, planImport } from '../backup';
-import { sanitizeGroups } from '../migrate';
+import { sanitizeGroups, sanitizePeople } from '../migrate';
+import { recurringFrom } from '../months';
 import { evalAmount, isSum, toPaise } from '../money';
 import { expense, group } from './fixtures';
 
@@ -79,7 +80,7 @@ describe('backup files', () => {
 
   it('explains bad files', () => {
     assert.throws(() => parseBackup('not json'), /can't be read/);
-    assert.throws(() => parseBackup('{"hello":1}'), /isn't a Vilarci Split backup/);
+    assert.throws(() => parseBackup('{"hello":1}'), /isn't a Vilarci E-Split backup/);
     assert.throws(() => parseBackup('{"app":"vilarci-split","version":99,"groups":[]}'), /newer version/);
     assert.throws(() => parseBackup('{"app":"vilarci-split","version":2,"groups":[]}'), /No usable groups/);
   });
@@ -126,5 +127,49 @@ describe('toPaise', () => {
     assert.equal(toPaise(''), null);
     assert.equal(toPaise('1.234'), null);
     assert.equal(toPaise('abc'), null);
+  });
+});
+
+describe('schema v3: hostel months and repeats', () => {
+  const rent = { ...expense('rent', 9000, 'A', ['A', 'B'], { date: '2026-10-01' }), recurringId: 'r1' };
+  const g = {
+    ...group(['A', 'B'], [rent]),
+    kind: 'hostel' as const,
+    closedMonths: ['2026-09', '2026-08'],
+    recurring: [recurringFrom(rent, 'r1', 0)],
+  };
+
+  it('keeps pinned and archived expenses through a backup', () => {
+    const flagged = { ...g, expenses: [{ ...rent, pinnedAt: 7, archivedAt: 9 }] };
+    const e = parseBackup(buildBackup([flagged])).groups[0].expenses[0];
+    assert.deepEqual([e.pinnedAt, e.archivedAt], [7, 9]);
+  });
+
+  it('keeps closed months, repeats and the expense link through a backup', () => {
+    const parsed = parseBackup(buildBackup([g])).groups[0];
+    assert.deepEqual(parsed.closedMonths, ['2026-08', '2026-09']);
+    assert.deepEqual(parsed.recurring, g.recurring);
+    assert.equal(parsed.expenses[0].recurringId, 'r1');
+  });
+
+  it('drops broken repeats and bad months', () => {
+    const bad = {
+      ...g,
+      closedMonths: ['2026-13', 'nope', '2026-10'],
+      recurring: [...g.recurring, { ...g.recurring[0], id: 'r2', day: 40 }, { ...g.recurring[0], id: 'r3', payers: { Z: 900000 } }],
+    };
+    const { groups, skipped } = sanitizeGroups([bad]);
+    assert.deepEqual(groups[0].closedMonths, ['2026-10']);
+    assert.deepEqual(groups[0].recurring?.map((r) => r.id), ['r1']);
+    assert.equal(skipped, 2);
+  });
+});
+
+describe('sanitizePeople', () => {
+  it('keeps valid people once', () => {
+    assert.deepEqual(sanitizePeople([{ id: 'a', name: ' Krish ', createdAt: 1 }, { id: 'a', name: 'Dup' }, { id: 'b' }, 'x']), [
+      { id: 'a', name: 'Krish', createdAt: 1 },
+    ]);
+    assert.deepEqual(sanitizePeople(null), []);
   });
 });

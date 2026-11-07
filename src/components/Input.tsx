@@ -1,6 +1,6 @@
 import React from 'react';
-import { StyleSheet, Text, TextInput, View, type TextInputProps } from 'react-native';
-import { colors } from '../theme/colors';
+import { Text, TextInput, View, type TextInputProps } from 'react-native';
+import { makeStyles, useTheme } from '../theme/ThemeContext';
 import { font, radii, spacing } from '../theme/tokens';
 
 interface Props extends TextInputProps {
@@ -9,11 +9,14 @@ interface Props extends TextInputProps {
 }
 
 export function Input({ label, error, style, ...rest }: Props) {
+  const styles = useStyles();
+  const { colors, dark } = useTheme();
   return (
     <View style={styles.wrap}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
       <TextInput
         placeholderTextColor={colors.textSecondary}
+        keyboardAppearance={dark ? 'dark' : 'light'}
         style={[styles.input, error ? styles.inputError : null, style]}
         {...rest}
       />
@@ -22,26 +25,26 @@ export function Input({ label, error, style, ...rest }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((c) => ({
   wrap: { marginBottom: spacing(4) },
   label: {
     fontSize: font.sm,
     fontWeight: '600',
-    color: colors.textSecondary,
+    color: c.textSecondary,
     marginBottom: spacing(1.5),
     textTransform: 'uppercase',
     letterSpacing: 0.6,
   },
   input: {
-    backgroundColor: colors.surface,
+    backgroundColor: c.surface,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: c.border,
     borderRadius: radii.md,
     paddingHorizontal: spacing(4),
     paddingVertical: spacing(3),
     fontSize: font.md + 1,
-    color: colors.textPrimary,
+    color: c.textPrimary,
   },
-  inputError: { borderColor: colors.danger },
-  error: { color: colors.danger, fontSize: font.sm, marginTop: spacing(1) },
-});
+  inputError: { borderColor: c.danger },
+  error: { color: c.danger, fontSize: font.sm, marginTop: spacing(1) },
+}));

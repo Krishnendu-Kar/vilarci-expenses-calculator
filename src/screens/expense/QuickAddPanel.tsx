@@ -16,14 +16,18 @@ import {
   type Draft,
   type QuickRow,
 } from '../../lib/quickAdd';
-import { getMe, setMe, type ManyForm } from '../../lib/drafts';
+import { resolveMe } from '../../lib/people';
+import { isClosed, monthOf } from '../../lib/months';
+import type { ManyForm } from '../../lib/drafts';
 import { money } from '../../lib/money';
-import { plural, todayISO } from '../../lib/format';
+import { monthLabel, todayISO } from '../../lib/format';
 import { joinNames } from '../../lib/describe';
 import { newId } from '../../lib/id';
 import { CATEGORIES, categoryOf } from '../../data/categories';
-import { colors } from '../../theme/colors';
+import { makeStyles, useTheme } from '../../theme/ThemeContext';
+import { useI18n } from '../../i18n/I18nContext';
 import { font, radii, spacing } from '../../theme/tokens';
+import type { Key } from '../../i18n';
 import type { CategoryKey, Group, Member } from '../../types';
 
 interface Props {
@@ -33,11 +37,11 @@ interface Props {
   onDone: () => void;
 }
 
-const HELP: [string, string][] = [
-  ['Krish - 48, 80, 180(3)', 'Krish paid each amount for everyone. (3) = only 3 people shared it.'],
-  ['Krish 50+50+Sayak 60', 'Several people on one line.'],
-  ['Krish+Tamal food 50 I paid', 'You paid for just those two. "ami diyachi" works too.'],
-  ['Sayak roll 40 and Krish 24 ami pabo', 'Each of them owes you their own amount.'],
+const HELP: [string, Key][] = [
+  ['Krish - 48, 80, 180(3)', 'quick.help1'],
+  ['Krish 50+50+Sayak 60', 'quick.help2'],
+  ['Krish+Tamal food 50 I paid', 'quick.help3'],
+  ['Sayak roll 40 and Krish 24 ami pabo', 'quick.help4'],
 ];
 
 /** Same draft → same key while the text around it changes. */
@@ -52,27 +56,29 @@ function rowKeys(drafts: Draft[]) {
 const capitalize = (s: string) => s.replace(/\b\p{L}/gu, (c) => c.toUpperCase());
 
 export function QuickAddPanel({ group, initial, onChange, onDone }: Props) {
-  const { addExpenses } = useGroups();
+  const { addExpenses, people, profile, meMap, setMe } = useGroups();
+  const styles = useStyles();
+  const { colors, dark } = useTheme();
+  const { t } = useI18n();
   const members = group.members;
   const [text, setText] = useState(initial?.text ?? '');
   const [date, setDate] = useState(initial?.date ?? todayISO());
   const [category, setCategory] = useState<CategoryKey>(initial?.category ?? 'food');
+  /** Typed name (lower-cased) → a member's id, someone from your other groups, or "new". */
   const [names, setNames] = useState<ManyForm['names']>(initial?.names ?? {});
   const [fixes, setFixes] = useState<ManyForm['rows']>(initial?.rows ?? {});
-  const [meId, setMeId] = useState<string | null>(null);
+  // "Me" is whoever you picked before, or your profile's person in this group.
+  const [meId, setMeId] = useState<string | null>(() => resolveMe(group, profile, meMap[group.id]));
   const [openRow, setOpenRow] = useState<string | null>(null);
   const [openName, setOpenName] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(!initial?.text);
 
   useEffect(() => {
-    getMe(group.id)
-      .then((id) => id && members.some((m) => m.id === id) && setMeId(id))
-      .catch(() => {});
-  }, [group.id, members]);
-
-  useEffect(() => {
     onChange({ text, date, category, names, rows: fixes });
   }, [text, date, category, names, fixes, onChange]);
+
+  // People from your other groups who aren't in this one.
+  const outsiders = useMemo(() => people.filter((p) => !members.some((m) => m.id === p.id)), [people, members]);
 
   // The preview trails the typing slightly, so the text box never lags or
   // drops letters while a long list is being re-read.
@@ -90,9 +96,15 @@ export function QuickAddPanel({ group, initial, onChange, onDone }: Props) {
   }, [drafts]);
   const usesMe = [...typed.keys()].some(isMeAlias);
 
-  const newMembers: Member[] = [...typed.entries()]
-    .filter(([k]) => names[k] === 'new' && !isMeAlias(k))
-    .map(([k, n]) => ({ id: `new:${k}`, name: capitalize(n) }));
+  // Joining the group with this: brand-new people, or people from your other groups.
+  const joining = new Map<string, Member>();
+  for (const [k, n] of typed) {
+    if (isMeAlias(k)) continue;
+    if (names[k] === 'new') joining.set(`new:${k}`, { id: `new:${k}`, name: capitalize(n) });
+    const known = outsiders.find((p) => p.id === names[k]);
+    if (known) joining.set(known.id, { id: known.id, name: known.name });
+  }
+  const newMembers = [...joining.values()];
   const everyone = [...members, ...newMembers];
   const nameOf = (id: string) => everyone.find((m) => m.id === id)?.name ?? '?';
 
@@ -100,7 +112,7 @@ export function QuickAddPanel({ group, initial, onChange, onDone }: Props) {
   for (const [k, n] of typed) {
     if (isMeAlias(k)) nameToId[k] = meId;
     else if (names[k] === 'new') nameToId[k] = `new:${k}`;
-    else if (names[k] && members.some((m) => m.id === names[k])) nameToId[k] = names[k];
+    else if (names[k] && everyone.some((m) => m.id === names[k])) nameToId[k] = names[k];
     else nameToId[k] = matchMember(n, members, meId);
   }
 
@@ -120,7 +132,8 @@ export function QuickAddPanel({ group, initial, onChange, onDone }: Props) {
   const total = rows.reduce((s, r) => s + r.amount, 0);
   const byPayer = new Map<string, number>();
   for (const r of rows) if (r.payer) byPayer.set(r.payer, (byPayer.get(r.payer) ?? 0) + r.amount);
-  const ready = rows.length > 0 && problems === 0 && (!usesMe || !!meId);
+  const closed = isClosed(group, monthOf(date));
+  const ready = rows.length > 0 && problems === 0 && (!usesMe || !!meId) && !closed;
 
   const fixRow = (key: string, patch: { payer?: string; among?: string[] | null }) =>
     setFixes((f) => ({ ...f, [key]: { ...f[key], ...patch } }));
@@ -133,41 +146,39 @@ export function QuickAddPanel({ group, initial, onChange, onDone }: Props) {
 
   const save = () => {
     const built = buildQuickExpenses(rows, { everyone: everyone.map((m) => m.id), date, category }, newId);
-    if (!built || (usesMe && !meId)) return;
-    const real = Object.fromEntries(newMembers.map((m) => [m.id, newId()]));
+    if (!built || !ready) return;
+    // Brand-new people get real ids now; people from other groups keep theirs.
+    const real = Object.fromEntries(newMembers.filter((m) => m.id.startsWith('new:')).map((m) => [m.id, newId()]));
     const fix = (id: string) => real[id] ?? id;
     const expenses = built.map((e) => ({
       ...e,
       payers: Object.fromEntries(Object.entries(e.payers).map(([id, v]) => [fix(id), v])),
       splitAmong: e.splitAmong.map(fix),
     }));
-    addExpenses(group.id, expenses, newMembers.map((m) => ({ id: real[m.id], name: m.name })));
-    if (meId) setMe(group.id, meId).catch(() => {});
+    addExpenses(group.id, expenses, newMembers.map((m) => ({ id: fix(m.id), name: m.name })));
+    if (meId) setMe(group.id, meId);
     onDone();
   };
 
   return (
     <View>
       <Pressable onPress={() => setShowHelp((v) => !v)} style={styles.helpHead} hitSlop={6}>
-        <Ionicons name="help-circle-outline" size={18} color={colors.primary} />
-        <Text style={styles.link}>How to write it</Text>
-        <Ionicons name={showHelp ? 'chevron-up' : 'chevron-down'} size={14} color={colors.primary} />
+        <Ionicons name="help-circle-outline" size={18} color={colors.tint} />
+        <Text style={styles.link}>{t('quick.howTo')}</Text>
+        <Ionicons name={showHelp ? 'chevron-up' : 'chevron-down'} size={14} color={colors.tint} />
       </Pressable>
       {showHelp ? (
         <View style={styles.help}>
-          <Text style={styles.helpIntro}>
-            Paste a message from your group chat, or type one line per person. Nobody needs to know the total. The app
-            adds it all up.
-          </Text>
+          <Text style={styles.helpIntro}>{t('quick.helpIntro')}</Text>
           {HELP.map(([example, meaning]) => (
             <View key={example} style={styles.helpRow}>
               <Text style={styles.code}>{example}</Text>
-              <Text style={styles.helpText}>{meaning}</Text>
+              <Text style={styles.helpText}>{t(meaning)}</Text>
             </View>
           ))}
-          <Text style={styles.helpText}>"Me", "I", "ami", "amar" mean you. Write 1200, not 1,200.</Text>
+          <Text style={styles.helpText}>{t('quick.helpMe')}</Text>
           <Pressable onPress={tryExample} hitSlop={6} style={styles.exampleBtn}>
-            <Text style={styles.link}>Try an example</Text>
+            <Text style={styles.link}>{t('quick.tryExample')}</Text>
           </Pressable>
         </View>
       ) : null}
@@ -179,6 +190,7 @@ export function QuickAddPanel({ group, initial, onChange, onDone }: Props) {
         multiline
         placeholder={'Krish - 48, 80, 64, 180(3)\nTamal - 36, 360\nMe - 60, 48'}
         placeholderTextColor={colors.textSecondary}
+        keyboardAppearance={dark ? 'dark' : 'light'}
         autoCapitalize="words"
         autoCorrect={false}
         textAlignVertical="top"
@@ -188,7 +200,7 @@ export function QuickAddPanel({ group, initial, onChange, onDone }: Props) {
         <View style={styles.errors}>
           {errors.map((e, i) => (
             <Text key={i} style={styles.errorText}>
-              Line {e.line}: {e.message}
+              {t('quick.lineError', { line: e.line, message: e.message })}
             </Text>
           ))}
         </View>
@@ -196,7 +208,7 @@ export function QuickAddPanel({ group, initial, onChange, onDone }: Props) {
 
       {usesMe ? (
         <View style={[styles.card, !meId && styles.cardAttention]}>
-          <Text style={styles.cardTitle}>Who is "me"?</Text>
+          <Text style={styles.cardTitle}>{t('quick.whoIsMe')}</Text>
           <View style={styles.chips}>
             {members.map((m) => (
               <Chip key={m.id} label={m.name} selected={meId === m.id} onPress={() => setMeId(m.id)} />
@@ -207,19 +219,25 @@ export function QuickAddPanel({ group, initial, onChange, onDone }: Props) {
 
       {typed.size ? (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Names</Text>
+          <Text style={styles.cardTitle}>{t('quick.names')}</Text>
           {[...typed.entries()]
             .filter(([k]) => !isMeAlias(k))
             .map(([k, n]) => {
               const id = nameToId[k];
               const editing = openName === k || !id;
+              const knownId = matchMember(n, outsiders);
+              const known = knownId ? outsiders.find((p) => p.id === knownId) : undefined;
               return (
                 <View key={k} style={styles.nameRow}>
                   <Pressable onPress={() => setOpenName(openName === k ? null : k)} style={styles.nameHead}>
                     <Text style={styles.nameTyped}>{n}</Text>
                     <Ionicons name="arrow-forward" size={14} color={colors.textSecondary} />
                     <Text style={[styles.nameMatched, !id && styles.problem]}>
-                      {id ? (names[k] === 'new' ? `${capitalize(n)} (new)` : nameOf(id)) : 'Who is this?'}
+                      {id
+                        ? names[k] === 'new' || joining.has(id)
+                          ? t('quick.newTag', { name: nameOf(id) })
+                          : nameOf(id)
+                        : t('quick.whoIsThis')}
                     </Text>
                   </Pressable>
                   {editing ? (
@@ -235,8 +253,19 @@ export function QuickAddPanel({ group, initial, onChange, onDone }: Props) {
                           }}
                         />
                       ))}
+                      {known ? (
+                        <Chip
+                          label={t('quick.addKnown', { name: known.name })}
+                          icon="people-outline"
+                          selected={names[k] === known.id}
+                          onPress={() => {
+                            setNames((s) => ({ ...s, [k]: known.id }));
+                            setOpenName(null);
+                          }}
+                        />
+                      ) : null}
                       <Chip
-                        label={`Add "${capitalize(n)}"`}
+                        label={t('quick.addNew', { name: capitalize(n) })}
                         icon="person-add-outline"
                         selected={names[k] === 'new'}
                         onPress={() => {
@@ -252,9 +281,9 @@ export function QuickAddPanel({ group, initial, onChange, onDone }: Props) {
         </View>
       ) : null}
 
-      <SectionLabel>Date</SectionLabel>
+      <SectionLabel>{t('expense.date')}</SectionLabel>
       <DateField value={date} onChange={setDate} />
-      <SectionLabel>Category</SectionLabel>
+      <SectionLabel>{t('expense.category')}</SectionLabel>
       <View style={[styles.chips, styles.gapBelow]}>
         {CATEGORIES.map((c) => (
           <Chip key={c.key} label={c.label} icon={c.icon} selected={category === c.key} onPress={() => setCategory(c.key)} />
@@ -263,14 +292,13 @@ export function QuickAddPanel({ group, initial, onChange, onDone }: Props) {
 
       {rows.length ? (
         <>
-          <SectionLabel>
-            {plural(rows.length, 'expense')} · tap one to change it
-          </SectionLabel>
+          <SectionLabel>{t('quick.rowsHeader', { count: rows.length })}</SectionLabel>
           {rows.map((r, i) => {
             const key = keys[i];
             const problem = rowProblem(r);
             const open = openRow === key;
-            const forText = r.among === null ? 'everyone' : r.among.length ? joinNames(r.among.map(nameOf)) : 'nobody yet';
+            const forText =
+              r.among === null ? t('quick.forEveryone') : r.among.length ? joinNames(r.among.map(nameOf)) : t('quick.forNobody');
             return (
               <View key={key} style={[styles.row, problem && styles.rowProblem]}>
                 <Pressable onPress={() => setOpenRow(open ? null : key)} style={styles.rowHead}>
@@ -279,7 +307,7 @@ export function QuickAddPanel({ group, initial, onChange, onDone }: Props) {
                       {r.title}
                     </Text>
                     <Text style={[styles.rowMeta, problem && styles.problem]} numberOfLines={2}>
-                      {problem ?? `${nameOf(r.payer!)} paid · for ${forText}`}
+                      {problem ?? t('quick.rowMeta', { payer: nameOf(r.payer!), for: forText })}
                     </Text>
                   </View>
                   <Text style={styles.rowAmount}>{money(r.amount)}</Text>
@@ -287,18 +315,16 @@ export function QuickAddPanel({ group, initial, onChange, onDone }: Props) {
                 </Pressable>
                 {open ? (
                   <View style={styles.editor}>
-                    <Text style={styles.editorLabel}>Paid by</Text>
+                    <Text style={styles.editorLabel}>{t('quick.paidBy')}</Text>
                     <View style={styles.chips}>
                       {everyone.map((m) => (
                         <Chip key={m.id} label={m.name} selected={r.payer === m.id} onPress={() => fixRow(key, { payer: m.id })} />
                       ))}
                     </View>
-                    <Text style={styles.editorLabel}>
-                      For{r.needCount ? ` (pick ${r.needCount})` : ''}
-                    </Text>
+                    <Text style={styles.editorLabel}>{r.needCount ? t('quick.forPick', { count: r.needCount }) : t('quick.for')}</Text>
                     <View style={styles.chips}>
                       {!r.needCount ? (
-                        <Chip label="Everyone" selected={r.among === null} onPress={() => fixRow(key, { among: null })} />
+                        <Chip label={t('quick.everyone')} selected={r.among === null} onPress={() => fixRow(key, { among: null })} />
                       ) : null}
                       {everyone.map((m) => {
                         const on = r.among?.includes(m.id) ?? false;
@@ -324,12 +350,12 @@ export function QuickAddPanel({ group, initial, onChange, onDone }: Props) {
 
           <View style={styles.summary}>
             <View style={styles.summaryTop}>
-              <Text style={styles.summaryLabel}>Total</Text>
+              <Text style={styles.summaryLabel}>{t('quick.total')}</Text>
               <Text style={styles.summaryTotal}>{money(total)}</Text>
             </View>
             {[...byPayer.entries()].map(([id, amt]) => (
               <View key={id} style={styles.summaryLine}>
-                <Text style={styles.summaryName}>{nameOf(id)} paid</Text>
+                <Text style={styles.summaryName}>{t('quick.paidSummary', { name: nameOf(id) })}</Text>
                 <Text style={styles.summaryAmt}>{money(amt)}</Text>
               </View>
             ))}
@@ -337,15 +363,20 @@ export function QuickAddPanel({ group, initial, onChange, onDone }: Props) {
 
           {!ready ? (
             <Text style={styles.blocker}>
-              {usesMe && !meId
-                ? 'Pick who "me" is above.'
-                : unknownNames.length
-                  ? `Tell the app who ${joinNames(unknownNames.map(([, n]) => `"${n}"`))} ${unknownNames.length === 1 ? 'is' : 'are'}.`
-                  : `${plural(problems, 'expense')} still need${problems === 1 ? 's' : ''} an answer (in red).`}
+              {closed
+                ? t('month.lockedAdd', { month: monthLabel(monthOf(date)) })
+                : usesMe && !meId
+                  ? t('quick.pickMe')
+                  : unknownNames.length
+                    ? t('quick.tellWho', {
+                        count: unknownNames.length,
+                        names: joinNames(unknownNames.map(([, n]) => `"${n}"`)),
+                      })
+                    : t('quick.needAnswer', { count: problems })}
             </Text>
           ) : null}
           <PrimaryButton
-            label={`Add ${plural(rows.length, 'expense')}`}
+            label={t('quick.addButton', { count: rows.length })}
             onPress={save}
             disabled={!ready}
             style={styles.saveBtn}
@@ -356,90 +387,90 @@ export function QuickAddPanel({ group, initial, onChange, onDone }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((c) => ({
   helpHead: { flexDirection: 'row', alignItems: 'center', gap: spacing(1.5), marginBottom: spacing(2) },
-  link: { color: colors.primary, fontWeight: '700', fontSize: font.sm + 1 },
+  link: { color: c.tint, fontWeight: '700', fontSize: font.sm + 1 },
   help: {
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: c.surfaceAlt,
     borderRadius: radii.md,
     padding: spacing(3.5),
     marginBottom: spacing(3),
     gap: spacing(2),
   },
-  helpIntro: { fontSize: font.sm + 1, color: colors.textPrimary, lineHeight: 19 },
+  helpIntro: { fontSize: font.sm + 1, color: c.textPrimary, lineHeight: 19 },
   helpRow: { gap: 2 },
   code: {
     fontFamily: 'monospace',
     fontSize: font.sm,
-    color: colors.textPrimary,
-    backgroundColor: colors.surface,
+    color: c.textPrimary,
+    backgroundColor: c.surface,
     alignSelf: 'flex-start',
     paddingHorizontal: spacing(1.5),
     paddingVertical: 2,
     borderRadius: 4,
   },
-  helpText: { fontSize: font.sm, color: colors.textSecondary, lineHeight: 17 },
+  helpText: { fontSize: font.sm, color: c.textSecondary, lineHeight: 17 },
   exampleBtn: { alignSelf: 'flex-start', marginTop: spacing(1) },
   input: {
     minHeight: 140,
-    backgroundColor: colors.surface,
+    backgroundColor: c.surface,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: c.border,
     borderRadius: radii.md,
     padding: spacing(3.5),
     fontSize: font.md + 1,
     lineHeight: 22,
-    color: colors.textPrimary,
+    color: c.textPrimary,
     marginBottom: spacing(3),
   },
-  errors: { backgroundColor: colors.dangerBg, borderRadius: radii.md, padding: spacing(3), gap: spacing(1), marginBottom: spacing(3) },
-  errorText: { fontSize: font.sm, color: colors.danger },
+  errors: { backgroundColor: c.dangerBg, borderRadius: radii.md, padding: spacing(3), gap: spacing(1), marginBottom: spacing(3) },
+  errorText: { fontSize: font.sm, color: c.danger },
   card: {
-    backgroundColor: colors.surface,
+    backgroundColor: c.surface,
     borderRadius: radii.lg,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: c.border,
     padding: spacing(3.5),
     marginBottom: spacing(4),
   },
-  cardAttention: { borderColor: colors.danger },
-  cardTitle: { fontSize: font.md, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing(2) },
+  cardAttention: { borderColor: c.danger },
+  cardTitle: { fontSize: font.md, fontWeight: '700', color: c.textPrimary, marginBottom: spacing(2) },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing(2) },
   gapBelow: { marginBottom: spacing(5) },
-  nameRow: { paddingVertical: spacing(2), borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, gap: spacing(2) },
+  nameRow: { paddingVertical: spacing(2), borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.border, gap: spacing(2) },
   nameHead: { flexDirection: 'row', alignItems: 'center', gap: spacing(2) },
-  nameTyped: { fontSize: font.md, color: colors.textSecondary },
-  nameMatched: { fontSize: font.md, fontWeight: '700', color: colors.textPrimary },
-  problem: { color: colors.danger },
+  nameTyped: { fontSize: font.md, color: c.textSecondary },
+  nameMatched: { fontSize: font.md, fontWeight: '700', color: c.textPrimary, flexShrink: 1 },
+  problem: { color: c.danger },
   row: {
-    backgroundColor: colors.surface,
+    backgroundColor: c.surface,
     borderRadius: radii.md,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: c.border,
     marginBottom: spacing(2),
     overflow: 'hidden',
   },
-  rowProblem: { borderColor: colors.danger },
+  rowProblem: { borderColor: c.danger },
   rowHead: { flexDirection: 'row', alignItems: 'center', gap: spacing(2.5), padding: spacing(3) },
   rowBody: { flex: 1 },
-  rowTitle: { fontSize: font.md, fontWeight: '700', color: colors.textPrimary },
-  rowMeta: { fontSize: font.sm, color: colors.textSecondary, marginTop: 2 },
-  rowAmount: { fontSize: font.md + 1, fontWeight: '800', color: colors.textPrimary },
+  rowTitle: { fontSize: font.md, fontWeight: '700', color: c.textPrimary },
+  rowMeta: { fontSize: font.sm, color: c.textSecondary, marginTop: 2 },
+  rowAmount: { fontSize: font.md + 1, fontWeight: '800', color: c.textPrimary },
   editor: { paddingHorizontal: spacing(3), paddingBottom: spacing(3.5), gap: spacing(2) },
-  editorLabel: { fontSize: font.xs + 1, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase', marginTop: spacing(1) },
+  editorLabel: { fontSize: font.xs + 1, fontWeight: '700', color: c.textSecondary, textTransform: 'uppercase', marginTop: spacing(1) },
   summary: {
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: c.surfaceAlt,
     borderRadius: radii.lg,
     padding: spacing(4),
     marginTop: spacing(2),
     gap: spacing(1.5),
   },
   summaryTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: spacing(1) },
-  summaryLabel: { fontSize: font.md, fontWeight: '700', color: colors.textPrimary },
-  summaryTotal: { fontSize: font.xl, fontWeight: '800', color: colors.primary },
+  summaryLabel: { fontSize: font.md, fontWeight: '700', color: c.textPrimary },
+  summaryTotal: { fontSize: font.xl, fontWeight: '800', color: c.tint },
   summaryLine: { flexDirection: 'row', justifyContent: 'space-between' },
-  summaryName: { fontSize: font.sm + 1, color: colors.textSecondary },
-  summaryAmt: { fontSize: font.sm + 1, fontWeight: '600', color: colors.textPrimary },
-  blocker: { fontSize: font.sm + 1, color: colors.danger, fontWeight: '600', marginTop: spacing(3) },
+  summaryName: { fontSize: font.sm + 1, color: c.textSecondary },
+  summaryAmt: { fontSize: font.sm + 1, fontWeight: '600', color: c.textPrimary },
+  blocker: { fontSize: font.sm + 1, color: c.danger, fontWeight: '600', marginTop: spacing(3) },
   saveBtn: { marginTop: spacing(3) },
-});
+}));

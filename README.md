@@ -1,19 +1,23 @@
-# Vilarci Split
+# Vilarci E-Split
 
 Split shared expenses in a group (trip friends, hostel mess, flatmates) and see who pays whom at the end.
 
 ## Features
 
-- **Groups** for trips, hostels and flats. Add, rename or remove people.
+- **Groups** for trips, hostels and flats. People are shared across groups: add someone from your other groups (or yourself) in one tap, and a rename shows up everywhere.
 - **Expenses** with a date, category and optional note.
   - **More than one payer:** "A paid ₹2000 and B paid ₹1000 for dinner".
-  - **Split equally** among everyone or only some people (a ₹4000 boat ride for 3 of the 6).
-  - **Split by exact amounts, shares** (2 shares for someone who ate double) **or percentages.**
-- **Balances:** what each person paid, their fair share, and whether they get money back or owe.
-- **Settle up:** the fewest payments that even everyone out. Tap **Paid** when the money has been sent (it can be undone).
-- **Stats:** spending by category, by person, and day by day.
+  - **Split equally** among everyone or only some people, or **by exact amounts, shares or percentages.**
+  - **Many at once:** paste a group-chat message and every amount is read and previewed.
+- **Hostel / Flat groups go month by month:** one month at a time, unpaid amounts carry over, months can be closed, and rent or Wi-Fi can repeat every month.
+- **Members, Settle up and Stats:** balances, the fewest payments that even everyone out (tap **Paid**, with undo), and where the money went.
+- **Search** expenses (by item, person or amount), members and people.
+- **Home:** filters, pin a group (for good or for some days), archive finished groups, and a **Bin** that keeps deleted groups for 30 days.
+- **People and Profile pages:** everyone from all your groups, and your own balance across every group.
 - **Send to someone without the app:** a PDF report, a WhatsApp-ready message, or a group file for friends who have the app.
-- **Backup & restore:** export all data to a `.json` file, and import it later with a preview of what will change. A reminder appears if you haven't backed up in 2 weeks.
+- **Backup & restore:** export all data to a `.json` file and import it later with a preview.
+- **Dark mode** and **English, हिन्दी, বাংলা, தமிழ்**.
+- **Undo** after deletes, and a friendly error screen (with "Export my data") instead of a crash.
 
 v1 stores everything on the device (AsyncStorage). v2 will add a database: swap out `src/lib/storage.ts`.
 
@@ -21,25 +25,29 @@ v1 stores everything on the device (AsyncStorage). v2 will add a database: swap 
 
 ```bash
 npm install
-npm start          # scan the QR code with Expo Go (SDK 57)
+npm start          # scan the QR code with Expo Go (SDK 58)
 npm run web        # or open it in the browser
-npm test           # unit tests for the money maths, migration, backup and reports
+npm test           # unit tests: money maths, migration, backup, reports, people, months, search, bin, translations
 npm run typecheck
 ```
 
 ## Layout
 
 ```
-App.tsx                         providers + navigator
-src/types.ts                    Group / Member / Expense / Payment (money in paise)
+App.tsx                         providers (theme, language, error screen, data, undo) + navigator
+src/types.ts                    Group / Member / Expense / Payment / Recurring (money in paise)
 src/lib/split.ts                shares, balances, settle-up, stats
+src/lib/people.ts               the People directory (same person in every group)
+src/lib/months.ts               hostel month view, carried balances, monthly repeats
 src/lib/migrate.ts              validates + upgrades stored and imported data
 src/lib/backup.ts               backup file format, import preview and merge
 src/lib/report.ts               text and PDF (HTML) reports
 src/lib/files.ts                share sheet, PDF, file picker (native + web)
 src/lib/storage.ts              AsyncStorage persistence (v2: DB goes here)
-src/context/GroupsContext.tsx   state + actions, saves on every change
-src/screens/                    Groups, GroupForm, GroupDetail (+ group/ tabs), ExpenseForm, Backup
+src/context/                    GroupsContext (state + actions), UndoContext (undo bar)
+src/i18n/                       translations (en, hi, bn, ta)
+src/theme/                      light/dark palettes and makeStyles
+src/screens/                    Home, People, Profile, groups, expenses, settings pages
 src/components/                 shared UI
 ```
 

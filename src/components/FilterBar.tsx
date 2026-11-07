@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, type ScrollViewInstance } from 'react-native';
+import { Pressable, ScrollView, Text, type ScrollViewInstance } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { colors } from '../theme/colors';
+import { makeStyles, useTheme } from '../theme/ThemeContext';
 import { font, radii, spacing } from '../theme/tokens';
 import type { IconName } from '../data/categories';
 
@@ -21,6 +21,8 @@ interface Props<K extends string> {
 export function FilterBar<K extends string>({ options, value, onChange }: Props<K>) {
   const scroll = useRef<ScrollViewInstance>(null);
   const xs = useRef<Record<string, number>>({});
+  const styles = useStyles();
+  const { colors } = useTheme();
 
   // Keep the active pill in view when it changes by swiping.
   useEffect(() => {
@@ -47,7 +49,7 @@ export function FilterBar<K extends string>({ options, value, onChange }: Props<
             accessibilityRole="tab"
             accessibilityState={{ selected: active }}
           >
-            {o.icon ? <Ionicons name={o.icon} size={14} color={active ? colors.primary : colors.textSecondary} /> : null}
+            {o.icon ? <Ionicons name={o.icon} size={14} color={active ? colors.tint : colors.textSecondary} /> : null}
             <Text style={[styles.label, active && styles.labelActive]}>{o.label}</Text>
           </Pressable>
         );
@@ -56,7 +58,7 @@ export function FilterBar<K extends string>({ options, value, onChange }: Props<
   );
 }
 
-const styles = StyleSheet.create({
+const useStyles = makeStyles((c) => ({
   bar: { flexGrow: 0 },
   row: { gap: spacing(2), paddingHorizontal: spacing(4), paddingVertical: spacing(3) },
   pill: {
@@ -66,11 +68,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing(3.5),
     paddingVertical: spacing(1.75),
     borderRadius: radii.pill,
-    backgroundColor: colors.surface,
+    backgroundColor: c.surface,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: c.border,
   },
-  pillActive: { backgroundColor: colors.surfaceAlt, borderColor: colors.primaryLight },
-  label: { fontSize: font.sm + 1, fontWeight: '600', color: colors.textSecondary },
-  labelActive: { color: colors.primary, fontWeight: '700' },
-});
+  pillActive: { backgroundColor: c.surfaceAlt, borderColor: c.primaryLight },
+  label: { fontSize: font.sm + 1, fontWeight: '600', color: c.textSecondary },
+  labelActive: { color: c.tint, fontWeight: '700' },
+}));

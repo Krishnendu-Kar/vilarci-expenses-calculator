@@ -1,4 +1,5 @@
 import { Alert, Platform } from 'react-native';
+import { translate } from '../i18n';
 
 /** Destructive yes/no prompt. react-native-web has no Alert buttons, so web uses window.confirm. */
 export function confirmAction(title: string, message: string, confirmLabel: string, onConfirm: () => void) {
@@ -7,7 +8,7 @@ export function confirmAction(title: string, message: string, confirmLabel: stri
     return;
   }
   Alert.alert(title, message, [
-    { text: 'Cancel', style: 'cancel' },
+    { text: translate('common.cancel'), style: 'cancel' },
     { text: confirmLabel, style: 'destructive', onPress: onConfirm },
   ]);
 }

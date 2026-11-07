@@ -1,5 +1,6 @@
 import type { Group } from '../types';
 import { SCHEMA_VERSION, sanitizeGroups, type SanitizeResult } from './migrate';
+import { translate } from '../i18n';
 
 // Backup files are plain JSON so they survive WhatsApp, Drive and email.
 // The same format carries a full backup or a single shared group.
@@ -23,17 +24,17 @@ export function parseBackup(text: string): ParsedBackup {
   try {
     data = JSON.parse(text);
   } catch {
-    throw new Error("This file can't be read. Pick a .json file exported from Vilarci Split.");
+    throw new Error(translate('backup.unreadable'));
   }
   const d = data as { app?: unknown; version?: unknown; exportedAt?: unknown; groups?: unknown };
   if (!d || d.app !== BACKUP_APP || !Array.isArray(d.groups)) {
-    throw new Error("This isn't a Vilarci Split backup. Pick a file exported from the app.");
+    throw new Error(translate('backup.notOurs'));
   }
   if (typeof d.version === 'number' && d.version > SCHEMA_VERSION) {
-    throw new Error('This file is from a newer version of Vilarci Split. Update the app, then try again.');
+    throw new Error(translate('backup.newer'));
   }
   const result = sanitizeGroups(d.groups);
-  if (result.groups.length === 0) throw new Error('No usable groups were found in this file.');
+  if (result.groups.length === 0) throw new Error(translate('backup.empty'));
   return { ...result, exportedAt: typeof d.exportedAt === 'string' ? d.exportedAt : undefined };
 }
 
