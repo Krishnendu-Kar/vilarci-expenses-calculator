@@ -173,7 +173,7 @@ Open with the gear on Home, or from Profile. A menu; each option opens its own p
 | **Bin** | Deleted groups, kept 30 days (section 1). |
 | **Appearance** | **Same as phone**, **Light** or **Dark**. Dark mode covers every screen; shared PDFs stay light. |
 | **Language** | **English, हिन्दी (Hindi), বাংলা (Bengali), தமிழ் (Tamil).** The whole app switches at once, including dates, reports and messages you share. |
-| **About** | Logo, name, version, what the app does, and a link to vilarci.in. |
+| **About** | Logo, name, version, what the app does, and "Made by Vilarci". |
 
 The app version is shown at the bottom of Settings.
 
