@@ -163,3 +163,6 @@ PIPELINE.md
 
 # APKs built locally (gradlew assembleRelease)
 builds/
+
+# Session handoff for Claude (local only)
+CONTEXT.md

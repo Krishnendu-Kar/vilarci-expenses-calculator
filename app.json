@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Vilarci Split",
+    "name": "Vilarci E-Split",
     "slug": "vilarci-expenses-calculator",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -10,8 +10,13 @@
       "supportsTablet": true
     },
     "android": {
-      "package": "in.vilarci.split",
+      "package": "in.vilarci.expensesplit",
       "versionCode": 1,
+      "blockedPermissions": [
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#9A0003",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -23,6 +28,7 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "./plugins/withReleaseSigning",
       "expo-sharing",
       "@react-native-community/datetimepicker",
       "expo-font",
