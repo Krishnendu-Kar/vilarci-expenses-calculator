@@ -2,7 +2,7 @@
 
 Vilarci E-Split helps a group of people share costs fairly: friends on a trip, students sharing a hostel mess, flatmates splitting groceries. Everyone logs what they paid for, and the app works out who owes whom and the fewest payments needed to even things out.
 
-**Version 1:** everything is stored on the phone. No account, no internet, no server.
+**Version 1:** everything is stored on the phone, in a small database (from 1.2). No account, no internet, no server.
 
 The app has a bar at the bottom with three pages: **Home** (your groups), **People** (everyone from all your groups) and **Profile** (you).
 
@@ -18,7 +18,7 @@ A group is a set of people who share costs, such as "Goa trip" or "Room 204 mess
 | Add yourself | A new group starts with **you** in it once the app knows your name. If it doesn't yet, tap **Me**, type your name once, and you're added; the name is saved to your Profile for next time. |
 | Add people from your other groups | Under the name box, **From your other groups** lists everyone you've added before, with the groups they're in. Tap someone to add them. Typing filters the list, so you can find a friend quickly. |
 | Add someone new | Type a name and tap **+** (or press Enter). This always makes a new person. A group needs at least 2 people. |
-| Same person everywhere | People are saved by an id, not by their name. A friend you add from another group is the same person in both, so the app knows they're one person. |
+| Same person everywhere | People are saved by a unique id, not by their name. A friend you add from another group is the same person in both, so the app knows they're one person. |
 | Rename people | Tap any name in the group's edit screen and change it. **The new name shows everywhere**: in every group, every expense, the People page and reports. Two people in the same group can't end up with the same name. |
 | Remove people | Allowed only if the person isn't in any expense, payment or monthly repeat yet. Otherwise the app explains what to change first, so totals never break. |
 | Edit a group | Use the pencil icon in the group's header. |
@@ -169,7 +169,7 @@ Open with the gear on Home, or from Profile. A menu; each option opens its own p
 | Option | What it does |
 |---|---|
 | **Export data** | Saves all groups into one file (`vilarci-e-split-backup-2026-10-27.json`) through the share menu. Shows the last export date, red if it's over 2 weeks old. A home banner reminds you after 2 weeks. |
-| **Import data** | Pick a backup or a group file. A preview shows each group as **New** or **Updates your copy** before anything changes. Broken files are explained, never half-loaded. |
+| **Import data** | Pick a backup or a group file. A preview shows each group as **New** or **Updates your copy** before anything changes. Broken files are explained, never half-loaded. Files made by older versions still work and update the right group. |
 | **Bin** | Deleted groups, kept 30 days (section 1). |
 | **Appearance** | **Same as phone**, **Light** or **Dark**. Dark mode covers every screen; shared PDFs stay light. |
 | **Language** | **English, हिन्दी (Hindi), বাংলা (Bengali), தமிழ் (Tamil).** The whole app switches at once, including dates, reports and messages you share. |
@@ -189,10 +189,11 @@ The app version is shown at the bottom of Settings.
 
 ## 10. Data and privacy
 
-- **Stored on the device only.** No account, no server, no tracking.
+- **Stored on the device only**, in a database on the phone (from 1.2). No account, no server, no tracking.
+- **Quick saving:** only what you changed is saved, so a group with hundreds of expenses saves as fast as a new one.
 - Data only leaves the phone when **you** share a report or export a backup.
 - Your profile, the People directory, pins, archive, the Bin, open counts and app settings stay on this phone and are never put in backups or shared files.
-- **Automatic upgrades:** data from older versions of the app is upgraded the next time it opens.
+- **Automatic upgrades:** data from older versions of the app is upgraded the next time it opens. Updating to 1.2 moves everything into the new database by itself: groups, people, pins, the Bin, unsaved drafts and settings all come along, and nothing is lost.
 
 ---
 
@@ -212,7 +213,18 @@ The app version is shown at the bottom of Settings.
 
 ---
 
-## 13. Coming next
+## 13. Versions
+
+| Version | What's new |
+|---|---|
+| **1.0.0** (Play Store, October 2026) | Groups, expenses with dates, notes, several payers and 4 ways to split; settle up with the fewest payments; Stats; PDF and WhatsApp reports; group files; Export / Import; Many at once; sums in the amount box; drafts; swiping between tabs and filters. |
+| **1.1.0** | Bottom bar with **People** and **Profile**; add people from other groups and rename them everywhere; pin and archive groups and expenses; the **Bin**; search; undo bar; error screen; hostel months and monthly repeats; **dark mode**; **Hindi, Bengali and Tamil**; small WhatsApp-style ⋮ menus. |
+| **1.2.0** (next) | Your data moves to a faster database on the phone, by itself and with nothing lost. Old backups and group files still import into the right group. |
+
+---
+
+## 14. Coming next
 
 - **Live sharing with a database:** the whole group sees the same data, and it replaces Import and group files. Export stays as an offline copy.
+- **Quick updates:** small fixes reach your phone without waiting for a Play Store update.
 - Later: receipt photos, a "Rate the app" prompt, foreign currencies, itemised bills, fingerprint lock.

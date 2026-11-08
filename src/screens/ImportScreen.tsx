@@ -5,6 +5,7 @@ import { ScreenContainer } from '../components/ScreenContainer';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { useGroups } from '../context/GroupsContext';
 import { parseBackup, planImport, type ImportPlan } from '../lib/backup';
+import { adoptIds } from '../lib/storage';
 import { pickTextFile } from '../lib/files';
 import { groupTotal } from '../lib/split';
 import { money } from '../lib/money';
@@ -40,7 +41,9 @@ export function ImportScreen({ navigation }: ScreenProps<'Import'>) {
       const file = await pickTextFile();
       if (!file) return;
       const parsed = parseBackup(file.text);
-      setPending({ fileName: file.name, ...parsed, plan: planImport(groups, parsed.groups) });
+      // Files from before 1.2 have short ids: they become the UUIDs used here.
+      const incoming = await adoptIds(parsed.groups);
+      setPending({ fileName: file.name, ...parsed, groups: incoming, plan: planImport(groups, incoming) });
     } catch (e) {
       notify(t('import.failed'), e instanceof Error ? e.message : String(e));
     } finally {

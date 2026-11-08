@@ -19,7 +19,7 @@ Split shared expenses in a group (trip friends, hostel mess, flatmates) and see 
 - **Dark mode** and **English, हिन्दी, বাংলা, தமிழ்**.
 - **Undo** after deletes, and a friendly error screen (with "Export my data") instead of a crash.
 
-v1 stores everything on the device (AsyncStorage). v2 will add a database: swap out `src/lib/storage.ts`.
+v1 stores everything on the device in SQLite (`expo-sqlite`, tables in `src/lib/db/schema.ts`), with UUIDs for every id. v2 will add a server database: swap out `src/lib/storage.ts`.
 
 ## Run
 
@@ -43,7 +43,8 @@ src/lib/migrate.ts              validates + upgrades stored and imported data
 src/lib/backup.ts               backup file format, import preview and merge
 src/lib/report.ts               text and PDF (HTML) reports
 src/lib/files.ts                share sheet, PDF, file picker (native + web)
-src/lib/storage.ts              AsyncStorage persistence (v2: DB goes here)
+src/lib/storage.ts              saving and loading (v2: the server goes here)
+src/lib/db/                     SQLite tables, groups ↔ rows, upgrade from AsyncStorage
 src/context/                    GroupsContext (state + actions), UndoContext (undo bar)
 src/i18n/                       translations (en, hi, bn, ta)
 src/theme/                      light/dark palettes and makeStyles

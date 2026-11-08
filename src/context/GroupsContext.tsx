@@ -3,14 +3,7 @@ import { AppState } from 'react-native';
 import type { Expense, Group, GroupKind, Member, Payment, Person, Profile, Recurring } from '../types';
 import {
   EMPTY_PROFILE,
-  loadBin,
-  loadGroups,
-  loadMeMap,
-  loadPeople,
-  loadPrefs,
-  loadProfile,
-  loadVisits,
-  saveBin,
+  loadAll,
   saveGroups,
   saveMeMap,
   savePeople,
@@ -117,49 +110,35 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
   profileRef.current = profile;
 
   useEffect(() => {
-    const safe = <T,>(p: Promise<T>, fallback: T, what: string) =>
-      p.catch((e) => {
-        console.warn(`Could not load ${what}`, e);
-        return fallback;
-      });
-    Promise.all([
-      loadGroups().catch((e) => {
+    loadAll()
+      .then(({ groups, bin: storedBin, people, visits: v, prefs: p, profile: prof, meMap: me }) => {
+        // Older data has no People directory yet: it's built from the groups.
+        const now = new Date();
+        const reconciled = reconcilePeople(groups, people);
+        // Groups 30 days in the Bin are deleted for good here.
+        const bin = purgeBin(storedBin, now.getTime());
+        setDb({ ...reconciled, groups: reconciled.groups.map((g) => applyRecurring(g, now, newId)), bin });
+        setVisits(v);
+        // Pins of binned groups are kept, so restoring brings them back.
+        setPrefs(prunePrefs(p, [...groups, ...bin.map((b) => b.group)]));
+        setProfile(prof);
+        setMeMap(me);
+      })
+      .catch((e) => {
         loadFailed.current = true;
-        console.warn('Could not load saved groups', e);
-        return [] as Group[];
-      }),
-      safe(loadPeople(), [], 'people'),
-      safe(loadVisits(), {}, 'visit counts'),
-      safe(loadPrefs(), {}, 'pins'),
-      safe(loadProfile(), EMPTY_PROFILE, 'profile'),
-      safe(loadMeMap(), {}, 'who is me'),
-      safe(loadBin(), [], 'bin'),
-    ]).then(([groups, people, v, p, prof, me, storedBin]) => {
-      // Older data has no People directory yet: it's built from the groups.
-      const now = new Date();
-      const reconciled = reconcilePeople(groups, people);
-      // Groups 30 days in the Bin are deleted for good here.
-      const bin = purgeBin(storedBin, now.getTime());
-      setDb({ ...reconciled, groups: reconciled.groups.map((g) => applyRecurring(g, now, newId)), bin });
-      setVisits(v);
-      // Pins of binned groups are kept, so restoring brings them back.
-      setPrefs(prunePrefs(p, [...groups, ...bin.map((b) => b.group)]));
-      setProfile(prof);
-      setMeMap(me);
-      setReady(true);
-    });
+        console.warn('Could not load saved data', e);
+      })
+      .finally(() => setReady(true));
   }, []);
 
   const canSave = ready && !loadFailed.current;
+  // Groups and the Bin are saved together: moving to the Bin is one change.
   useEffect(() => {
-    if (canSave) saveGroups(db.groups).catch((e) => console.warn('Could not save groups', e));
-  }, [db.groups, canSave]);
+    if (canSave) saveGroups(db.groups, db.bin).catch((e) => console.warn('Could not save groups', e));
+  }, [db.groups, db.bin, canSave]);
   useEffect(() => {
     if (canSave) savePeople(db.people).catch((e) => console.warn('Could not save people', e));
   }, [db.people, canSave]);
-  useEffect(() => {
-    if (canSave) saveBin(db.bin).catch((e) => console.warn('Could not save bin', e));
-  }, [db.bin, canSave]);
   // Pruned on save, so deleted groups drop out of the counts.
   useEffect(() => {
     if (!canSave) return;

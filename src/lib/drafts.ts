@@ -1,9 +1,8 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { CategoryKey, SplitMode } from '../types';
+import * as storage from './storage';
 
 // Unsaved "Add expense" forms, one per group, so leaving the page (or the
 // app) doesn't lose what was typed. Never exported or shared.
-const DRAFTS_KEY = 'vilarci-split:expense-drafts';
 
 export interface OneForm {
   title: string;
@@ -38,32 +37,19 @@ export interface ExpenseDraft {
   savedAt: number;
 }
 
-type Store = Record<string, ExpenseDraft>;
-
-async function readAll(): Promise<Store> {
+export async function loadDraft(groupId: string): Promise<ExpenseDraft | null> {
   try {
-    const raw = await AsyncStorage.getItem(DRAFTS_KEY);
-    const parsed = raw ? JSON.parse(raw) : {};
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    const d = (await storage.loadDraft(groupId)) as ExpenseDraft | null;
+    return d && (d.formMode === 'one' || d.formMode === 'many') ? d : null;
   } catch {
-    return {};
+    return null;
   }
 }
 
-export async function loadDraft(groupId: string): Promise<ExpenseDraft | null> {
-  const d = (await readAll())[groupId];
-  return d && (d.formMode === 'one' || d.formMode === 'many') ? d : null;
-}
-
 export async function saveDraft(groupId: string, draft: ExpenseDraft) {
-  const all = await readAll();
-  all[groupId] = draft;
-  await AsyncStorage.setItem(DRAFTS_KEY, JSON.stringify(all));
+  await storage.saveDraft(groupId, draft);
 }
 
 export async function clearDraft(groupId: string) {
-  const all = await readAll();
-  if (!(groupId in all)) return;
-  delete all[groupId];
-  await AsyncStorage.setItem(DRAFTS_KEY, JSON.stringify(all));
+  await storage.clearDraft(groupId);
 }

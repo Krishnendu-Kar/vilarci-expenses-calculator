@@ -40,7 +40,8 @@
           "resizeMode": "contain",
           "backgroundColor": "#9A0003"
         }
-      ]
+      ],
+      "expo-sqlite"
     ]
   }
 }
