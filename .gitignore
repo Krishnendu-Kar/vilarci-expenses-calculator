@@ -166,3 +166,6 @@ builds/
 
 # Session handoff for Claude (local only)
 CONTEXT.md
+
+# Online DB plan: accounts, sync, server design (local only)
+onlinedb.md
