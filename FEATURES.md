@@ -225,6 +225,11 @@ The app version is shown at the bottom of Settings.
 
 ## 14. Coming next
 
-- **Live sharing with a database:** the whole group sees the same data, and it replaces Import and group files. Export stays as an offline copy.
+- **Hostel groups, simpler:** Members and Settle show all-time totals; the Expenses list gets a filter for month and category; an expense can be put in a chosen month (this month by default).
+- **Group lock:** open a group with your fingerprint or phone PIN.
+- **UPI ids:** save up to 3 and copy them from Settle.
+- **Accounts (optional):** sign in with email and password or with Google. Using the app without an account keeps working exactly as now.
+- **Google Drive backup:** to your own Drive, like WhatsApp. Export and Import stay too.
+- **Live groups:** invite by link or QR code, admins and members, guests for people without the app (link them to their account later), an activity feed, and it works offline: changes upload when you're back online.
 - **Quick updates:** small fixes reach your phone without waiting for a Play Store update.
-- Later: receipt photos, a "Rate the app" prompt, foreign currencies, itemised bills, fingerprint lock.
+- Later: notifications, WhatsApp OTP login, receipt photos, a "Rate the app" prompt, foreign currencies, itemised bills.
