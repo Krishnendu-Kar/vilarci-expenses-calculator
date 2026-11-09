@@ -169,3 +169,6 @@ CONTEXT.md
 
 # Online DB plan: accounts, sync, server design (local only)
 onlinedb.md
+
+# Supabase server code: Edge Functions + DB migrations (local only)
+/supabase/
