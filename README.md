@@ -8,8 +8,9 @@ Split shared expenses in a group (trip friends, hostel mess, flatmates) and see 
 - **Expenses** with a date, category and optional note.
   - **More than one payer:** "A paid ₹2000 and B paid ₹1000 for dinner".
   - **Split equally** among everyone or only some people, or **by exact amounts, shares or percentages.**
-  - **Many at once:** paste a group-chat message and every amount is read and previewed.
-- **Hostel / Flat groups go month by month:** one month at a time, unpaid amounts carry over, months can be closed, and rent or Wi-Fi can repeat every month.
+  - **Paste from chat:** paste a group-chat message, tap Convert, and every amount is read and previewed.
+- **Hostel / Flat groups:** open on this month with all-time balances, a month and category filter, a "counts for" month on each expense, and rent or Wi-Fi that repeats every month.
+- **Group lock** with the phone's fingerprint or screen lock, and **UPI ids** that show in Settle and reports.
 - **Members, Settle up and Stats:** balances, the fewest payments that even everyone out (tap **Paid**, with undo), and where the money went.
 - **Search** expenses (by item, person or amount), members and people.
 - **Home:** filters, pin a group (for good or for some days), archive finished groups, and a **Bin** that keeps deleted groups for 30 days.
@@ -27,7 +28,7 @@ v1 stores everything on the device in SQLite (`expo-sqlite`, tables in `src/lib/
 npm install
 npm start          # scan the QR code with Expo Go (SDK 58)
 npm run web        # or open it in the browser
-npm test           # unit tests: money maths, migration, backup, reports, people, months, search, bin, translations
+npm test           # unit tests: money maths, migration, backup, reports, people, months, search, bin, UPI, SQLite store, translations
 npm run typecheck
 ```
 
@@ -38,7 +39,9 @@ App.tsx                         providers (theme, language, error screen, data, 
 src/types.ts                    Group / Member / Expense / Payment / Recurring (money in paise)
 src/lib/split.ts                shares, balances, settle-up, stats
 src/lib/people.ts               the People directory (same person in every group)
-src/lib/months.ts               hostel month view, carried balances, monthly repeats
+src/lib/months.ts               expense month, month/category filter, monthly repeats
+src/lib/upi.ts                  UPI ids: check, clean up
+src/lib/deviceLock.ts           group lock: the phone's fingerprint or screen lock
 src/lib/migrate.ts              validates + upgrades stored and imported data
 src/lib/backup.ts               backup file format, import preview and merge
 src/lib/report.ts               text and PDF (HTML) reports

@@ -6,6 +6,7 @@ import { Avatar } from '../components/Avatar';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { SectionLabel } from '../components/SectionLabel';
 import { useGroups } from '../context/GroupsContext';
+import { useOpenGroups } from '../context/LockContext';
 import { nameTakenIn, netsFor, totals } from '../lib/people';
 import { isSettled } from '../lib/split';
 import { money } from '../lib/money';
@@ -19,6 +20,7 @@ import type { ScreenProps } from '../navigation/types';
 /** One person: their groups and balances, rename (everywhere), "this is me". */
 export function PersonScreen({ navigation, route }: ScreenProps<'Person'>) {
   const { groups, people, profile, renamePerson, deletePerson, linkProfile } = useGroups();
+  const { groups: openGroups, hidden } = useOpenGroups();
   const styles = useStyles();
   const { colors, dark } = useTheme();
   const { t } = useI18n();
@@ -39,7 +41,7 @@ export function PersonScreen({ navigation, route }: ScreenProps<'Person'>) {
     );
   }
 
-  const nets = netsFor(groups, person.id);
+  const nets = netsFor(openGroups, person.id);
   const { owed, owes } = totals(nets);
   const isMe = profile.personId === person.id;
 
@@ -124,7 +126,8 @@ export function PersonScreen({ navigation, route }: ScreenProps<'Person'>) {
         ) : null}
 
         <SectionLabel>{t('person.groups', { count: nets.length })}</SectionLabel>
-        {nets.length === 0 ? <Text style={styles.empty}>{t('person.noGroups')}</Text> : null}
+        {nets.length === 0 && !hidden ? <Text style={styles.empty}>{t('person.noGroups')}</Text> : null}
+        {hidden ? <Text style={styles.empty}>{t('lock.notCounted', { count: hidden })}</Text> : null}
         {nets.map(({ group, net }) => (
           <Pressable
             key={group.id}

@@ -9,6 +9,8 @@ import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { GroupsProvider } from './src/context/GroupsContext';
 import { UndoProvider } from './src/context/UndoContext';
 import { MenuProvider } from './src/context/MenuContext';
+import { LockProvider } from './src/context/LockContext';
+import { AuthProvider } from './src/context/AuthContext';
 import { RootNavigator } from './src/navigation/RootNavigator';
 
 export default function App() {
@@ -21,13 +23,17 @@ export default function App() {
               {/* Inside the theme and language, so even the error page matches the app. */}
               <ErrorBoundary>
                 <GroupsProvider>
-                  <UndoProvider>
-                    <MenuProvider>
-                      {/* The header bar is dark in both themes. */}
-                      <StatusBar style="light" />
-                      <RootNavigator />
-                    </MenuProvider>
-                  </UndoProvider>
+                  <LockProvider>
+                    <AuthProvider>
+                      <UndoProvider>
+                        <MenuProvider>
+                          {/* The header bar is dark in both themes. */}
+                          <StatusBar style="light" />
+                          <RootNavigator />
+                        </MenuProvider>
+                      </UndoProvider>
+                    </AuthProvider>
+                  </LockProvider>
                 </GroupsProvider>
               </ErrorBoundary>
             </Gate>

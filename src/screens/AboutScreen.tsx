@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image, ScrollView, Text, View } from 'react-native';
+import { Image, Linking, Pressable, ScrollView, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { makeStyles, useTheme } from '../theme/ThemeContext';
@@ -10,6 +10,7 @@ import type { IconName } from '../data/categories';
 import appConfig from '../../app.json';
 
 const LOGO = require('../../assets/logo.png');
+const WEBSITE = 'https://dev.vilarci.in';
 
 const POINTS: { icon: IconName; text: Key }[] = [
   { icon: 'people-outline', text: 'about.point1' },
@@ -38,6 +39,10 @@ export function AboutScreen() {
         </View>
 
         <Text style={styles.by}>{t('about.by')}</Text>
+        <Pressable onPress={() => Linking.openURL(WEBSITE).catch(() => {})} style={styles.link} accessibilityRole="link">
+          <Ionicons name="globe-outline" size={16} color={colors.tint} />
+          <Text style={styles.linkText}>dev.vilarci.in</Text>
+        </Pressable>
       </ScrollView>
     </ScreenContainer>
   );
@@ -61,4 +66,6 @@ const useStyles = makeStyles((c) => ({
   point: { flexDirection: 'row', gap: spacing(3), alignItems: 'flex-start' },
   pointText: { flex: 1, fontSize: font.md, color: c.textPrimary, lineHeight: 20 },
   by: { fontSize: font.sm, color: c.textSecondary, marginTop: spacing(6) },
+  link: { flexDirection: 'row', alignItems: 'center', gap: spacing(1.5), marginTop: spacing(1), padding: spacing(2) },
+  linkText: { color: c.tint, fontWeight: '700', fontSize: font.md },
 }));

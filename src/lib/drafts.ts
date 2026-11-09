@@ -9,6 +9,8 @@ export interface OneForm {
   amountText: string;
   category: CategoryKey;
   date: string;
+  /** Hostel/flat groups: the month picked by hand ("counts for"); null follows the date. */
+  month?: string | null;
   note: string;
   multiPay: boolean;
   payer: string;
@@ -31,6 +33,7 @@ export interface ManyForm {
 }
 
 export interface ExpenseDraft {
+  /** 'many': Paste from chat had been converted (before 1.3: the "Many at once" tab was open). */
   formMode: 'one' | 'many';
   one?: OneForm;
   many?: ManyForm;

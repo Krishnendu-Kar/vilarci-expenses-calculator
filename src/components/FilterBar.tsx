@@ -49,7 +49,7 @@ export function FilterBar<K extends string>({ options, value, onChange }: Props<
             accessibilityRole="tab"
             accessibilityState={{ selected: active }}
           >
-            {o.icon ? <Ionicons name={o.icon} size={14} color={active ? colors.tint : colors.textSecondary} /> : null}
+            {o.icon ? <Ionicons name={o.icon} size={14} color={active ? colors.onPrimary : colors.textSecondary} /> : null}
             <Text style={[styles.label, active && styles.labelActive]}>{o.label}</Text>
           </Pressable>
         );
@@ -72,7 +72,15 @@ const useStyles = makeStyles((c) => ({
     borderWidth: 1,
     borderColor: c.border,
   },
-  pillActive: { backgroundColor: c.surfaceAlt, borderColor: c.primaryLight },
+  pillActive: {
+    backgroundColor: c.primary,
+    borderColor: c.primary,
+    shadowColor: c.primary,
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 3,
+  },
   label: { fontSize: font.sm + 1, fontWeight: '600', color: c.textSecondary },
-  labelActive: { color: c.tint, fontWeight: '700' },
+  labelActive: { color: c.onPrimary, fontWeight: '700' },
 }));

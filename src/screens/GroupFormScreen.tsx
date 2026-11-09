@@ -7,6 +7,7 @@ import { Chip } from '../components/Chip';
 import { Avatar } from '../components/Avatar';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { SectionLabel } from '../components/SectionLabel';
+import { BottomSheet } from '../components/BottomSheet';
 import { useGroup, useGroups } from '../context/GroupsContext';
 import { useUndo } from '../context/UndoContext';
 import { memberIsInvolved } from '../lib/split';
@@ -23,6 +24,8 @@ import type { ScreenProps } from '../navigation/types';
 
 /** People shown before "Show all". */
 const SHORT_LIST = 8;
+/** Members listed on the form itself; the rest are counted. */
+const PREVIEW = 5;
 
 export function GroupFormScreen({ navigation, route }: ScreenProps<'GroupForm'>) {
   const groupId = route.params?.groupId;
@@ -56,6 +59,8 @@ export function GroupFormScreen({ navigation, route }: ScreenProps<'GroupForm'>)
   const [draft, setDraft] = useState('');
   const [showAll, setShowAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Adding, renaming and removing people happens in a popup.
+  const [peopleOpen, setPeopleOpen] = useState(false);
 
   const otherGroups = useMemo(() => groups.filter((g) => g.id !== existing?.id), [groups, existing?.id]);
   const inGroup = new Set(members.map((m) => m.id));
@@ -91,8 +96,24 @@ export function GroupFormScreen({ navigation, route }: ScreenProps<'GroupForm'>)
   // Typing a name and tapping + always makes a new person.
   const addNew = () => {
     const n = draft.trim().replace(/\s+/g, ' ');
-    if (!n) return;
-    if (addMember({ id: newId(), name: n })) setDraft('');
+    if (!n) return true;
+    if (!addMember({ id: newId(), name: n })) return false;
+    setDraft('');
+    return true;
+  };
+
+  const closePeople = () => {
+    setPeopleOpen(false);
+    setDraft('');
+    setAskName(false);
+    setNameForMe('');
+    setShowAll(false);
+    setError(null);
+  };
+
+  // Done also adds a name still sitting in the box, so it isn't lost.
+  const donePeople = () => {
+    if (addNew()) closePeople();
   };
 
   const addPerson = (p: Person) => {
@@ -172,6 +193,27 @@ export function GroupFormScreen({ navigation, route }: ScreenProps<'GroupForm'>)
     if (removed) showUndo(t('bin.moved', { name: removed.name }), () => restoreFromBin(removed.id));
   };
 
+  const typedMember = members.find((m) => m.name.toLowerCase() === draft.trim().toLowerCase());
+  // People from your other groups, filtered by what's typed.
+  const candidateList = candidates.length ? (
+    <>
+      <Text style={styles.fromLabel}>{t('groupForm.fromGroups')}</Text>
+      {shown.map((p) => (
+        <PersonRow key={p.id} name={p.name} avatar={p.name} sub={groupNames(p)} onPress={() => addPerson(p)} />
+      ))}
+      {shown.length < candidates.length ? (
+        <Pressable onPress={() => setShowAll(true)} hitSlop={8} style={styles.showAll}>
+          <Text style={styles.link}>{t('groupForm.showAll', { count: candidates.length })}</Text>
+        </Pressable>
+      ) : null}
+    </>
+  ) : draft.trim() && !error ? (
+    // Typing someone already in the group says so, instead of "nobody called…".
+    <Text style={styles.noMatch}>
+      {typedMember ? t('groupForm.alreadyIn', { name: typedMember.name }) : t('groupForm.noMatch', { name: draft.trim() })}
+    </Text>
+  ) : null;
+
   return (
     <ScreenContainer>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
@@ -192,6 +234,68 @@ export function GroupFormScreen({ navigation, route }: ScreenProps<'GroupForm'>)
         {kind === 'hostel' ? <Text style={styles.kindHint}>{t('groupForm.hostelHint')}</Text> : null}
 
         <SectionLabel>{t('groupForm.people', { count: members.length })}</SectionLabel>
+        <Pressable onPress={() => setPeopleOpen(true)} style={({ pressed }) => [styles.memberList, pressed && styles.pressed]}>
+          {members.slice(0, PREVIEW).map((m) => (
+            <View key={m.id} style={styles.memberRow}>
+              <Avatar name={m.name || '?'} size={32} />
+              <Text style={styles.memberName} numberOfLines={1}>
+                {m.name}
+              </Text>
+              {m.id === meId ? <Text style={styles.youTag}>{t('common.you')}</Text> : null}
+            </View>
+          ))}
+          {members.length > PREVIEW ? <Text style={styles.more}>{t('groupForm.morePeople', { count: members.length - PREVIEW })}</Text> : null}
+          {members.length === 0 ? <Text style={styles.hint}>{t('groupForm.emptyHint')}</Text> : null}
+        </Pressable>
+        <PrimaryButton
+          label={members.length ? t('groupForm.managePeople') : t('groupForm.addPeople')}
+          variant="outline"
+          onPress={() => setPeopleOpen(true)}
+          style={styles.manageBtn}
+        />
+
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+
+        <PrimaryButton label={existing ? t('groupForm.save') : t('groupForm.create')} onPress={save} style={styles.saveBtn} />
+        {existing ? <PrimaryButton label={t('groupForm.delete')} variant="danger" onPress={remove} style={styles.deleteBtn} /> : null}
+      </ScrollView>
+
+      <BottomSheet
+        visible={peopleOpen}
+        title={t('groupForm.people', { count: members.length })}
+        onClose={closePeople}
+        tall
+        footer={<PrimaryButton label={t('groupForm.done')} onPress={donePeople} />}
+      >
+        {/* Adding someone comes first, so the keyboard never covers the box. */}
+        <View style={styles.addRow}>
+          <TextInput
+            style={styles.addInput}
+            placeholder={t('groupForm.addPlaceholder')}
+            placeholderTextColor={colors.textSecondary}
+            keyboardAppearance={dark ? 'dark' : 'light'}
+            value={draft}
+            onChangeText={(v) => {
+              setDraft(v);
+              setError(null);
+            }}
+            onSubmitEditing={addNew}
+            submitBehavior="submit"
+            returnKeyType="done"
+            maxLength={30}
+          />
+          <Pressable
+            onPress={addNew}
+            style={[styles.addBtn, !draft.trim() && styles.addBtnDisabled]}
+            accessibilityLabel={t('groupForm.addNew')}
+          >
+            <Ionicons name="person-add" size={18} color={colors.onPrimary} />
+          </Pressable>
+        </View>
+        {error ? <Text style={[styles.error, styles.sheetError]}>{error}</Text> : null}
+        {draft.trim() ? candidateList : null}
+
+        <Text style={styles.fromLabel}>{t('groupForm.inGroup')}</Text>
         <View style={styles.memberList}>
           {members.map((m) => (
             <View key={m.id} style={styles.memberRow}>
@@ -204,7 +308,7 @@ export function GroupFormScreen({ navigation, route }: ScreenProps<'GroupForm'>)
                 maxLength={30}
               />
               {m.id === meId ? <Text style={styles.youTag}>{t('common.you')}</Text> : null}
-              <Pressable onPress={() => removeMember(m)} hitSlop={10}>
+              <Pressable onPress={() => removeMember(m)} hitSlop={10} accessibilityLabel={t('groupForm.remove', { name: m.name })}>
                 <Ionicons name="close-circle" size={22} color={colors.textSecondary} />
               </Pressable>
             </View>
@@ -213,96 +317,51 @@ export function GroupFormScreen({ navigation, route }: ScreenProps<'GroupForm'>)
         </View>
         {sharedIds.size ? <Text style={styles.renameHint}>{t('groupForm.renameHint')}</Text> : null}
 
-        {/* ---------- Adding people ---------- */}
-        <View style={styles.addBox}>
-          <View style={styles.addRow}>
-            <TextInput
-              style={styles.addInput}
-              placeholder={t('groupForm.addPlaceholder')}
-              placeholderTextColor={colors.textSecondary}
-              keyboardAppearance={dark ? 'dark' : 'light'}
-              value={draft}
-              onChangeText={(v) => {
-                setDraft(v);
-                setError(null);
-              }}
-              onSubmitEditing={addNew}
-              submitBehavior="submit"
-              returnKeyType="done"
-              maxLength={30}
-            />
-            <Pressable
-              onPress={addNew}
-              style={[styles.addBtn, !draft.trim() && styles.addBtnDisabled]}
-              accessibilityLabel={t('groupForm.addNew')}
-            >
-              <Ionicons name="person-add" size={18} color={colors.onPrimary} />
-            </Pressable>
-          </View>
-
-          {!meInGroup ? (
-            askName ? (
-              <View style={styles.meBox}>
-                <Text style={styles.fromLabel}>{t('groupForm.myNameLabel')}</Text>
-                <View style={styles.addRow}>
-                  <TextInput
-                    style={styles.addInput}
-                    placeholder={t('profile.namePlaceholder')}
-                    placeholderTextColor={colors.textSecondary}
-                    keyboardAppearance={dark ? 'dark' : 'light'}
-                    value={nameForMe}
-                    onChangeText={(v) => {
-                      setNameForMe(v);
-                      setError(null);
-                    }}
-                    onSubmitEditing={confirmMyName}
-                    submitBehavior="submit"
-                    returnKeyType="done"
-                    autoFocus
-                    maxLength={30}
-                  />
-                  <Pressable
-                    onPress={confirmMyName}
-                    style={[styles.addMeBtn, !nameForMe.trim() && styles.addBtnDisabled]}
-                    accessibilityRole="button"
-                  >
-                    <Text style={styles.addMeText}>{t('groupForm.addMe')}</Text>
-                  </Pressable>
-                </View>
-                <Text style={styles.personSub}>{t('groupForm.myNameHint')}</Text>
+        {!meInGroup ? (
+          askName ? (
+            <View style={styles.meBox}>
+              <Text style={styles.fromLabel}>{t('groupForm.myNameLabel')}</Text>
+              <View style={styles.addRow}>
+                <TextInput
+                  style={styles.addInput}
+                  placeholder={t('profile.namePlaceholder')}
+                  placeholderTextColor={colors.textSecondary}
+                  keyboardAppearance={dark ? 'dark' : 'light'}
+                  value={nameForMe}
+                  onChangeText={(v) => {
+                    setNameForMe(v);
+                    setError(null);
+                  }}
+                  onSubmitEditing={confirmMyName}
+                  submitBehavior="submit"
+                  returnKeyType="done"
+                  autoFocus
+                  maxLength={30}
+                />
+                <Pressable
+                  onPress={confirmMyName}
+                  style={[styles.addMeBtn, !nameForMe.trim() && styles.addBtnDisabled]}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.addMeText}>{t('groupForm.addMe')}</Text>
+                </Pressable>
               </View>
-            ) : (
+              <Text style={styles.personSub}>{t('groupForm.myNameHint')}</Text>
+            </View>
+          ) : (
+            <View style={styles.meBox}>
               <PersonRow
                 name={myName ? t('groupForm.you', { name: youPerson?.name ?? myName }) : t('groupForm.me')}
                 avatar={youPerson?.name ?? (myName || t('groupForm.me'))}
                 sub={t('groupForm.youSub')}
                 onPress={addMe}
               />
-            )
-          ) : null}
+            </View>
+          )
+        ) : null}
 
-          {candidates.length ? (
-            <>
-              <Text style={styles.fromLabel}>{t('groupForm.fromGroups')}</Text>
-              {shown.map((p) => (
-                <PersonRow key={p.id} name={p.name} avatar={p.name} sub={groupNames(p)} onPress={() => addPerson(p)} />
-              ))}
-              {shown.length < candidates.length ? (
-                <Pressable onPress={() => setShowAll(true)} hitSlop={8} style={styles.showAll}>
-                  <Text style={styles.link}>{t('groupForm.showAll', { count: candidates.length })}</Text>
-                </Pressable>
-              ) : null}
-            </>
-          ) : draft.trim() ? (
-            <Text style={styles.noMatch}>{t('groupForm.noMatch', { name: draft.trim() })}</Text>
-          ) : null}
-        </View>
-
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-
-        <PrimaryButton label={existing ? t('groupForm.save') : t('groupForm.create')} onPress={save} style={styles.saveBtn} />
-        {existing ? <PrimaryButton label={t('groupForm.delete')} variant="danger" onPress={remove} style={styles.deleteBtn} /> : null}
-      </ScrollView>
+        {draft.trim() ? null : candidateList}
+      </BottomSheet>
     </ScreenContainer>
   );
 }
@@ -347,6 +406,8 @@ const useStyles = makeStyles((c) => ({
     borderBottomColor: c.border,
   },
   memberName: { flex: 1, fontSize: font.md + 1, color: c.textPrimary, paddingVertical: spacing(1) },
+  more: { fontSize: font.sm, color: c.textSecondary, paddingVertical: spacing(2.5), textAlign: 'center' },
+  manageBtn: { marginBottom: spacing(5) },
   youTag: {
     flexShrink: 0,
     fontSize: font.xs,
@@ -360,15 +421,6 @@ const useStyles = makeStyles((c) => ({
   },
   hint: { color: c.textSecondary, fontSize: font.sm + 1, paddingVertical: spacing(4), textAlign: 'center' },
   renameHint: { fontSize: font.sm, color: c.textSecondary, marginBottom: spacing(2), marginLeft: spacing(1) },
-  addBox: {
-    backgroundColor: c.surface,
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    borderColor: c.border,
-    padding: spacing(3),
-    marginTop: spacing(2),
-    marginBottom: spacing(4),
-  },
   addRow: { flexDirection: 'row', gap: spacing(2) },
   addInput: {
     flex: 1,
@@ -389,7 +441,7 @@ const useStyles = makeStyles((c) => ({
     justifyContent: 'center',
   },
   addBtnDisabled: { opacity: 0.4 },
-  meBox: { marginTop: spacing(1) },
+  meBox: { marginTop: spacing(3) },
   addMeBtn: {
     paddingHorizontal: spacing(4),
     borderRadius: radii.md,
@@ -423,6 +475,7 @@ const useStyles = makeStyles((c) => ({
   link: { color: c.tint, fontWeight: '700', fontSize: font.sm + 1 },
   noMatch: { fontSize: font.sm, color: c.textSecondary, marginTop: spacing(3), textAlign: 'center' },
   error: { color: c.danger, fontSize: font.sm + 1, marginBottom: spacing(3), fontWeight: '600' },
+  sheetError: { marginTop: spacing(2), marginBottom: 0 },
   saveBtn: { marginTop: spacing(2) },
   deleteBtn: { marginTop: spacing(3) },
 }));

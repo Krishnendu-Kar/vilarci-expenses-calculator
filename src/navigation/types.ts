@@ -25,6 +25,12 @@ export type RootStackParamList = {
   Import: undefined;
   Bin: undefined;
   About: undefined;
+  /** Sign in / create an account / reset the password. */
+  Auth: { mode?: 'signIn' | 'signUp' } | undefined;
+  /** Find a group or a person by name. */
+  Search: undefined;
+  /** Read a group's invite QR code with the camera. */
+  Scan: undefined;
 };
 
 export type ScreenProps<K extends keyof RootStackParamList> = NativeStackScreenProps<RootStackParamList, K>;

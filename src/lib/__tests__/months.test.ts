@@ -6,14 +6,16 @@ import {
   applyRecurring,
   daysIn,
   dueDate,
-  inMonth,
-  monthBalances,
-  monthsOf,
+  expenseMonth,
+  filterGroup,
+  firstMonthOf,
+  isFiltered,
+  lastPickableMonth,
+  monthsWithExpenses,
+  NO_FILTER,
   recurringFrom,
-  setMonthClosed,
   withRepeat,
 } from '../months';
-import { computeBalances } from '../split';
 import { expense, group } from './fixtures';
 import type { Group } from '../../types';
 
@@ -31,34 +33,47 @@ describe('month maths', () => {
     assert.equal(dueDate('2026-03', 5), '2026-03-05');
   });
 
-  it('lists every month from the first expense up to now', () => {
-    const g = { ...group(['A'], [expense('x', 10, 'A', ['A'], { date: '2026-08-15' })]), createdAt: new Date(2026, 7, 1).getTime() };
-    assert.deepEqual(monthsOf(g, new Date(2026, 9, 30)), ['2026-08', '2026-09', '2026-10']);
+  it('lets an expense count for 12 months ahead at most', () => {
+    assert.equal(lastPickableMonth(new Date(2026, 10, 8)), '2027-11');
   });
 });
 
-describe('monthBalances', () => {
-  // A pays 300 for A,B,C in September; B pays 150 for everyone in October.
-  const g = hostel(
-    group(['A', 'B', 'C'], [
-      expense('sep', 300, 'A', ['A', 'B', 'C'], { date: '2026-09-10' }),
-      expense('oct', 150, 'B', ['A', 'B', 'C'], { date: '2026-10-02' }),
-    ]),
-  );
+describe('expense month and the filter', () => {
+  // A forgotten October bill added in November, next month's gas bought early, a normal one.
+  const late = { ...expense('late', 300, 'A', ['A', 'B'], { date: '2026-11-02' }), month: '2026-10', category: 'stay' as const };
+  const early = { ...expense('early', 900, 'B', ['A', 'B'], { date: '2026-11-20' }), month: '2026-12' };
+  const nov = { ...expense('nov', 150, 'A', ['A', 'B'], { date: '2026-11-05' }), category: 'food' as const };
+  const g = hostel(group(['A', 'B'], [late, early, nov]));
+  const ids = (x: { expenses: { id: string }[] }) => x.expenses.map((e) => e.id);
 
-  it("shows the month's own numbers plus what carried in", () => {
-    const oct = Object.fromEntries(monthBalances(g, '2026-10').map((b) => [b.memberId, b]));
-    assert.equal(oct.A.paid, 0);
-    assert.equal(oct.B.paid, 15000);
-    assert.equal(oct.A.carried, 20000);
-    assert.equal(oct.C.carried, -10000);
-    assert.equal(oct.C.net, -15000);
+  it("counts an expense in its own month, else its date's", () => {
+    assert.deepEqual([late, early, nov].map(expenseMonth), ['2026-10', '2026-12', '2026-11']);
+    assert.deepEqual([...monthsWithExpenses(g)].sort(), ['2026-10', '2026-11', '2026-12']);
   });
 
-  it('ends the latest month where the all-time balance is', () => {
-    const all = Object.fromEntries(computeBalances(g).map((b) => [b.memberId, b.net]));
-    for (const b of monthBalances(g, '2026-10')) assert.equal(b.net, all[b.memberId]);
-    assert.deepEqual(inMonth(g, '2026-09').expenses.map((e) => e.id), ['sep']);
+  it('filters by month, by categories, or both', () => {
+    assert.deepEqual(ids(filterGroup(g, { month: '2026-10', categories: [] })), ['late']);
+    assert.deepEqual(ids(filterGroup(g, { month: '2026-11', categories: [] })), ['nov'], 'dated in November but counts for another month');
+    assert.deepEqual(ids(filterGroup(g, { month: null, categories: ['food', 'stay'] })), ['late', 'nov']);
+    assert.deepEqual(ids(filterGroup(g, { month: '2026-11', categories: ['stay'] })), []);
+  });
+
+  it('gives back the same group when nothing is filtered, and keeps payments', () => {
+    assert.equal(filterGroup(g, NO_FILTER), g);
+    assert.equal(isFiltered(NO_FILTER), false);
+    const paid = { ...g, payments: [{ id: 'p', from: 'B', to: 'A', amount: 100, createdAt: 0 }] };
+    assert.equal(filterGroup(paid, { month: '2026-10', categories: [] }).payments, paid.payments);
+  });
+
+  it("steps back no further than the first expense or the group's start", () => {
+    const now = new Date(2026, 10, 8);
+    const made = (m: number) => new Date(2026, m, 15).getTime();
+    // A group made in September whose first expense counts for October.
+    assert.equal(firstMonthOf({ ...g, createdAt: made(8) }, now), '2026-09');
+    // Made in December, but with an October bill: October.
+    assert.equal(firstMonthOf({ ...g, createdAt: made(11) }, now), '2026-10');
+    // A new empty group made later than today's month still reaches this month.
+    assert.equal(firstMonthOf({ ...g, expenses: [], createdAt: made(11) }, now), '2026-11');
   });
 });
 
@@ -82,11 +97,10 @@ describe('applyRecurring', () => {
     assert.equal(applyRecurring(done, new Date(2026, 9, 31), id), done);
   });
 
-  it('skips closed months but moves past them', () => {
+  it('still adds months that an older version had closed', () => {
     const closed = { ...withRent, closedMonths: ['2026-09'] };
     const out = applyRecurring(closed, new Date(2026, 9, 30), id);
-    assert.deepEqual(out.expenses.filter((e) => e.id !== 'rent').map((e) => e.date), ['2026-10-01']);
-    assert.equal(out.recurring![0].lastMonth, '2026-10');
+    assert.deepEqual(out.expenses.filter((e) => e.id !== 'rent').map((e) => e.date).sort(), ['2026-09-01', '2026-10-01']);
   });
 
   it('only runs for hostel and flat groups', () => {
@@ -117,15 +131,5 @@ describe('withRepeat', () => {
     const out = withRepeat({ ...g, recurring: [r] }, { ...wifi, recurringId: 'r9' }, false, id);
     assert.equal(out.expense.recurringId, undefined);
     assert.deepEqual(out.recurring, []);
-  });
-});
-
-describe('setMonthClosed', () => {
-  it('closes and reopens, leaving no empty list behind', () => {
-    const g = hostel(group(['A'], []));
-    const closed = setMonthClosed(setMonthClosed(g, '2026-10', true), '2026-09', true);
-    assert.deepEqual(closed.closedMonths, ['2026-09', '2026-10']);
-    const open = setMonthClosed(setMonthClosed(closed, '2026-09', false), '2026-10', false);
-    assert.equal('closedMonths' in open, false);
   });
 });

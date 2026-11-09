@@ -1,7 +1,8 @@
-import type { Group, Person, Profile } from '../../types';
+import type { Group, Person, Profile, UpiId } from '../../types';
 import { sanitizeGroups, sanitizePeople } from '../migrate';
 import { sanitizePrefs, sanitizeVisits, type GroupPrefs, type Visits } from '../groupFilters';
 import { sanitizeBin, type BinItem } from '../bin';
+import { sanitizeUpiIds } from '../upi';
 import { idMapper, oldIds, remapDraft, remapGroup } from '../legacyIds';
 import type { ExpenseDraft } from '../drafts';
 import { MIGRATIONS } from './schema';
@@ -32,6 +33,8 @@ export interface Everything {
   prefs: GroupPrefs;
   profile: Profile;
   meMap: MeMap;
+  /** Your UPI ids, on this phone. */
+  upiIds: UpiId[];
 }
 
 /** AsyncStorage keys used before 1.2. The data there is left as it was. */
@@ -57,6 +60,7 @@ const SETTING = {
   lastBackup: 'last_backup',
   profileName: 'profile_name',
   profilePerson: 'profile_person_id',
+  upiIds: 'upi_ids',
   imported: 'legacy_imported_at',
 } as const;
 
@@ -179,8 +183,9 @@ export function createStore(open: () => Promise<Db>, readLegacy: () => Promise<L
       p.pinnedAt ?? null,
       p.pinnedAt != null ? (p.pinUntil ?? null) : null,
       p.archivedAt ?? null,
+      p.lockedAt ?? null,
     ]);
-    await runAll(db, insertRows('group_prefs', ['group_id', 'pinned_at', 'pin_until', 'archived_at'], rows));
+    await runAll(db, insertRows('group_prefs', ['group_id', 'pinned_at', 'pin_until', 'archived_at', 'locked_at'], rows));
   }
 
   async function writeVisits(db: Db, visits: Visits) {
@@ -225,9 +230,13 @@ export function createStore(open: () => Promise<Db>, readLegacy: () => Promise<L
         savedGroups = toMap(saved);
         const people = sanitizePeople(await db.all('SELECT id, name, created_at AS createdAt FROM people ORDER BY created_at, rowid'));
         savedPeople = new Map(people.map((p) => [p.id, p]));
-        const prefRows = await db.all<{ group_id: string; pinned_at: number | null; pin_until: number | null; archived_at: number | null }>(
-          'SELECT * FROM group_prefs',
-        );
+        const prefRows = await db.all<{
+          group_id: string;
+          pinned_at: number | null;
+          pin_until: number | null;
+          archived_at: number | null;
+          locked_at: number | null;
+        }>('SELECT * FROM group_prefs');
         const prefs = sanitizePrefs(
           Object.fromEntries(
             prefRows.map((r) => [
@@ -235,6 +244,7 @@ export function createStore(open: () => Promise<Db>, readLegacy: () => Promise<L
               {
                 ...(r.pinned_at !== null ? { pinnedAt: r.pinned_at, pinUntil: r.pin_until } : {}),
                 ...(r.archived_at !== null ? { archivedAt: r.archived_at } : {}),
+                ...(r.locked_at !== null ? { lockedAt: r.locked_at } : {}),
               },
             ]),
           ),
@@ -256,6 +266,7 @@ export function createStore(open: () => Promise<Db>, readLegacy: () => Promise<L
             personId: await getSetting(db, SETTING.profilePerson),
           },
           meMap: Object.fromEntries(meRows.map((r) => [r.group_id, r.member_id])),
+          upiIds: sanitizeUpiIds(parseJson(await getSetting(db, SETTING.upiIds))),
         };
       }),
 
@@ -292,6 +303,7 @@ export function createStore(open: () => Promise<Db>, readLegacy: () => Promise<L
           await setSetting(db, SETTING.profilePerson, profile.personId);
         }),
       ),
+    saveUpiIds: (ids: UpiId[]) => serial((db) => setSetting(db, SETTING.upiIds, ids.length ? JSON.stringify(ids) : null)),
 
     loadSetting: (key: SettingKey) => serial((db) => getSetting(db, SETTING[key])),
     saveSetting: (key: SettingKey, value: string) => serial((db) => setSetting(db, SETTING[key], value)),

@@ -137,4 +137,15 @@ CREATE TABLE legacy_ids (
 ) STRICT;
 `;
 
-export const MIGRATIONS: string[] = [V1];
+// 1.3: an expense can count for another month than its date's (hostel groups).
+const V2 = `
+ALTER TABLE expenses ADD COLUMN month TEXT;
+`;
+
+// 1.3: a group can be locked on this phone. Its own step, because test
+// builds had already run V2 without it.
+const V3 = `
+ALTER TABLE group_prefs ADD COLUMN locked_at INTEGER;
+`;
+
+export const MIGRATIONS: string[] = [V1, V2, V3];

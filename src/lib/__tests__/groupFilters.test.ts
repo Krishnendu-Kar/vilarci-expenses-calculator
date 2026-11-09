@@ -5,7 +5,9 @@ import {
   addVisit,
   archive,
   filterGroups,
+  isLocked,
   isPinned,
+  lock,
   pin,
   pinDaysLeft,
   prunePrefs,
@@ -13,6 +15,7 @@ import {
   sanitizePrefs,
   sanitizeVisits,
   unarchive,
+  unlock,
   unpin,
   type Visits,
 } from '../groupFilters';
@@ -111,5 +114,29 @@ describe('pins and archive', () => {
   it('ignores malformed stored prefs', () => {
     assert.deepEqual(sanitizePrefs([1]), {});
     assert.deepEqual(sanitizePrefs({ a: { pinnedAt: 5 }, b: { archivedAt: 'x' }, c: null }), { a: { pinnedAt: 5, pinUntil: null } });
+  });
+});
+
+describe('group lock', () => {
+  it('locks and unlocks without touching the pin', () => {
+    const pinned = pin({}, 'goa', null, 1);
+    const locked = lock(pinned, 'goa', 9);
+    assert.equal(isLocked(locked.goa), true);
+    assert.equal(isPinned(locked.goa), true);
+    assert.deepEqual(unlock(locked, 'goa'), pinned);
+    assert.deepEqual(unlock(lock({}, 'goa', 9), 'goa'), {}, 'no empty entry left behind');
+  });
+
+  it('stays through archive, unarchive, unpin and pruning', () => {
+    let prefs = lock(pin({}, 'mess', null, 1), 'mess', 2);
+    prefs = archive(prefs, 'mess', 5);
+    assert.deepEqual(prefs.mess, { archivedAt: 5, lockedAt: 2 });
+    assert.deepEqual(unarchive(prefs, 'mess'), { mess: { lockedAt: 2 } });
+    assert.deepEqual(unpin(lock({}, 'goa', 3), 'goa'), { goa: { lockedAt: 3 } });
+    assert.deepEqual(prunePrefs({ goa: { lockedAt: 3 }, gone: { lockedAt: 4 } }, groups), { goa: { lockedAt: 3 } });
+  });
+
+  it('reads a stored lock', () => {
+    assert.deepEqual(sanitizePrefs({ a: { lockedAt: 7 }, b: { lockedAt: 'yes' } }), { a: { lockedAt: 7 } });
   });
 });

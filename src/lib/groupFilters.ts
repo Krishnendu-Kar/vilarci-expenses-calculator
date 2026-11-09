@@ -4,13 +4,15 @@ import type { Group, GroupKind } from '../types';
 export type Visits = Record<string, { count: number; last: number }>;
 
 /**
- * Pin and archive state per group, on this phone only (like visits).
+ * Pin, archive and lock state per group, on this phone only (like visits).
  * pinUntil: null = pinned for good, a timestamp = pinned until then.
+ * lockedAt: opening the group asks for the fingerprint or screen lock.
  */
 export interface GroupPref {
   pinnedAt?: number;
   pinUntil?: number | null;
   archivedAt?: number;
+  lockedAt?: number;
 }
 export type GroupPrefs = Record<string, GroupPref>;
 
@@ -24,6 +26,10 @@ export function isPinned(pref: GroupPref | undefined, now = Date.now()) {
 
 export function isArchived(pref: GroupPref | undefined) {
   return pref?.archivedAt != null;
+}
+
+export function isLocked(pref: GroupPref | undefined) {
+  return pref?.lockedAt != null;
 }
 
 /** Days left on a timed pin (rounded up), or null for "always" / not pinned. */
@@ -71,13 +77,23 @@ export function unpin(prefs: GroupPrefs, groupId: string): GroupPrefs {
   return tidy({ ...prefs, [groupId]: rest });
 }
 
-/** Archiving also unpins: an archived group is out of the way. */
+/** Archiving also unpins: an archived group is out of the way. A lock stays. */
 export function archive(prefs: GroupPrefs, groupId: string, now = Date.now()): GroupPrefs {
-  return { ...prefs, [groupId]: { archivedAt: now } };
+  const lockedAt = prefs[groupId]?.lockedAt;
+  return { ...prefs, [groupId]: { archivedAt: now, ...(lockedAt != null ? { lockedAt } : {}) } };
 }
 
 export function unarchive(prefs: GroupPrefs, groupId: string): GroupPrefs {
   const { archivedAt: _a, ...rest } = prefs[groupId] ?? {};
+  return tidy({ ...prefs, [groupId]: rest });
+}
+
+export function lock(prefs: GroupPrefs, groupId: string, now = Date.now()): GroupPrefs {
+  return { ...prefs, [groupId]: { ...prefs[groupId], lockedAt: now } };
+}
+
+export function unlock(prefs: GroupPrefs, groupId: string): GroupPrefs {
+  const { lockedAt: _l, ...rest } = prefs[groupId] ?? {};
   return tidy({ ...prefs, [groupId]: rest });
 }
 
@@ -89,6 +105,7 @@ export function prunePrefs(prefs: GroupPrefs, groups: Group[], now = Date.now())
     if (!ids.has(id)) continue;
     const keep: GroupPref = isPinned(p, now) ? { pinnedAt: p.pinnedAt, pinUntil: p.pinUntil ?? null } : {};
     if (p.archivedAt != null) keep.archivedAt = p.archivedAt;
+    if (p.lockedAt != null) keep.lockedAt = p.lockedAt;
     if (Object.keys(keep).length) out[id] = keep;
   }
   return out;
@@ -102,7 +119,7 @@ export function sanitizePrefs(raw: unknown): GroupPrefs {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {};
   const out: GroupPrefs = {};
   for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
-    const r = v as { pinnedAt?: unknown; pinUntil?: unknown; archivedAt?: unknown } | null;
+    const r = v as { pinnedAt?: unknown; pinUntil?: unknown; archivedAt?: unknown; lockedAt?: unknown } | null;
     if (!r || typeof r !== 'object') continue;
     const p: GroupPref = {};
     if (typeof r.pinnedAt === 'number') {
@@ -110,6 +127,7 @@ export function sanitizePrefs(raw: unknown): GroupPrefs {
       p.pinUntil = typeof r.pinUntil === 'number' ? r.pinUntil : null;
     }
     if (typeof r.archivedAt === 'number') p.archivedAt = r.archivedAt;
+    if (typeof r.lockedAt === 'number') p.lockedAt = r.lockedAt;
     if (Object.keys(p).length) out[id] = p;
   }
   return out;

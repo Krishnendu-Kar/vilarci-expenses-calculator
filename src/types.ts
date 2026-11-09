@@ -22,6 +22,12 @@ export interface Person {
   createdAt: number;
 }
 
+/** A UPI id ("VPA", name@bank) you get paid on, with an optional label like "GPay". */
+export interface UpiId {
+  vpa: string;
+  label?: string;
+}
+
 /** You, on this phone only. `personId` links you to the People directory. */
 export interface Profile {
   name: string;
@@ -48,6 +54,12 @@ export interface Expense {
   splitValues?: Record<string, number>;
   /** Day the money was spent, local YYYY-MM-DD. */
   date: string;
+  /**
+   * Hostel/flat groups: the month it counts for ('YYYY-MM') when that isn't
+   * the month of `date`, like a forgotten bill from last month or next
+   * month's gas bought early. Absent: the month of `date`.
+   */
+  month?: string;
   note?: string;
   /** The monthly repeat that added it (hostel/flat groups). */
   recurringId?: string;
@@ -95,7 +107,10 @@ export interface Group {
   members: Member[];
   expenses: Expense[];
   payments: Payment[];
-  /** Hostel/flat groups: closed months ('YYYY-MM'). Their expenses are locked. */
+  /**
+   * Months closed in 1.1/1.2 ('YYYY-MM'). Closing was removed in 1.3 (nothing
+   * is locked now); the list is still saved and loaded so no data is lost.
+   */
   closedMonths?: string[];
   /** Hostel/flat groups: expenses that repeat every month. */
   recurring?: Recurring[];

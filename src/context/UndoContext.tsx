@@ -13,16 +13,18 @@ import { font, radii, spacing } from '../theme/tokens';
 
 interface UndoValue {
   showUndo: (message: string, undo: () => void) => void;
+  /** The same bar with just a message, e.g. "Copied". */
+  showNote: (message: string) => void;
 }
 
-const UndoContext = createContext<UndoValue>({ showUndo: () => {} });
+const UndoContext = createContext<UndoValue>({ showUndo: () => {}, showNote: () => {} });
 
 const SHOW_MS = 6000;
 
 interface Item {
   id: number;
   message: string;
-  undo: () => void;
+  undo?: () => void;
 }
 
 export function UndoProvider({ children }: { children: React.ReactNode }) {
@@ -30,7 +32,7 @@ export function UndoProvider({ children }: { children: React.ReactNode }) {
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const seq = useRef(0);
 
-  const showUndo = useCallback((message: string, undo: () => void) => {
+  const show = useCallback((message: string, undo?: () => void) => {
     clearTimeout(timer.current);
     const id = ++seq.current;
     setItem({ id, message, undo });
@@ -39,7 +41,7 @@ export function UndoProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => () => clearTimeout(timer.current), []);
 
-  const value = useMemo(() => ({ showUndo }), [showUndo]);
+  const value = useMemo(() => ({ showUndo: (m: string, undo: () => void) => show(m, undo), showNote: (m: string) => show(m) }), [show]);
 
   return (
     <UndoContext.Provider value={value}>
@@ -48,11 +50,15 @@ export function UndoProvider({ children }: { children: React.ReactNode }) {
         <Snackbar
           key={item.id}
           message={item.message}
-          onUndo={() => {
-            clearTimeout(timer.current);
-            setItem(null);
-            item.undo();
-          }}
+          onUndo={
+            item.undo
+              ? () => {
+                  clearTimeout(timer.current);
+                  setItem(null);
+                  item.undo?.();
+                }
+              : undefined
+          }
           onClose={() => setItem(null)}
         />
       ) : null}
@@ -64,7 +70,7 @@ export function useUndo() {
   return useContext(UndoContext);
 }
 
-function Snackbar({ message, onUndo, onClose }: { message: string; onUndo: () => void; onClose: () => void }) {
+function Snackbar({ message, onUndo, onClose }: { message: string; onUndo?: () => void; onClose: () => void }) {
   const styles = useStyles();
   const { colors } = useTheme();
   const { t } = useI18n();
@@ -76,10 +82,12 @@ function Snackbar({ message, onUndo, onClose }: { message: string; onUndo: () =>
         <Text style={styles.message} numberOfLines={2}>
           {message}
         </Text>
-        <Pressable onPress={onUndo} hitSlop={8} style={styles.undo} accessibilityRole="button">
-          <Ionicons name="arrow-undo" size={16} color={colors.accent} />
-          <Text style={styles.undoText}>{t('common.undo')}</Text>
-        </Pressable>
+        {onUndo ? (
+          <Pressable onPress={onUndo} hitSlop={8} style={styles.undo} accessibilityRole="button">
+            <Ionicons name="arrow-undo" size={16} color={colors.accent} />
+            <Text style={styles.undoText}>{t('common.undo')}</Text>
+          </Pressable>
+        ) : null}
         <Pressable onPress={onClose} hitSlop={10} accessibilityLabel="Close">
           <Ionicons name="close" size={18} color={colors.white} style={styles.close} />
         </Pressable>

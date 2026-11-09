@@ -11,6 +11,8 @@ import { toISODate } from './format';
  * v2 → v3: hostel groups gained `closedMonths` and `recurring`; expenses
  * gained optional `recurringId`, `pinnedAt` and `archivedAt`. Nothing to
  * convert; v2 data is valid v3.
+ * 1.3 added an optional expense `month`. The version stays 3: older apps
+ * refuse files with a higher number, and they can simply ignore `month`.
  */
 export const SCHEMA_VERSION = 3;
 
@@ -162,6 +164,9 @@ function sanitizeExpense(e: unknown, ids: Set<string>): Expense | null {
   const money = sanitizeMoney(e, ids);
   if (!money) return null;
   const createdAt = typeof e.createdAt === 'number' ? e.createdAt : Date.now();
+  const date = typeof e.date === 'string' && DATE_RE.test(e.date) ? e.date : toISODate(new Date(createdAt));
+  // Only kept when it differs from the date's month, so there's one way to say "same month".
+  const month = typeof e.month === 'string' && MONTH_RE.test(e.month) && e.month !== date.slice(0, 7) ? e.month : null;
   return {
     id: e.id,
     title: money.title,
@@ -171,7 +176,8 @@ function sanitizeExpense(e: unknown, ids: Set<string>): Expense | null {
     splitMode: money.splitMode,
     splitAmong: money.splitAmong,
     ...(money.splitValues ? { splitValues: money.splitValues } : {}),
-    date: typeof e.date === 'string' && DATE_RE.test(e.date) ? e.date : toISODate(new Date(createdAt)),
+    date,
+    ...(month ? { month } : {}),
     ...(isStr(e.note) ? { note: e.note.slice(0, 200) } : {}),
     ...(isStr(e.recurringId) ? { recurringId: e.recurringId } : {}),
     ...(typeof e.pinnedAt === 'number' ? { pinnedAt: e.pinnedAt } : {}),

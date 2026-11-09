@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
-import type { Expense, Group, GroupKind, Member, Payment, Person, Profile, Recurring } from '../types';
+import type { Expense, Group, GroupKind, Member, Payment, Person, Profile, Recurring, UpiId } from '../types';
 import {
   EMPTY_PROFILE,
   loadAll,
@@ -9,22 +9,25 @@ import {
   savePeople,
   savePrefs,
   saveProfile,
+  saveUpiIds,
   saveVisits,
   type MeMap,
 } from '../lib/storage';
 import {
   addVisit,
   archive,
+  lock,
   pin,
   prunePrefs,
   pruneVisits,
   unarchive,
+  unlock,
   unpin,
   type GroupPrefs,
   type Visits,
 } from '../lib/groupFilters';
 import { applyMembers, reconcilePeople, renameInGroups } from '../lib/people';
-import { applyRecurring, setMonthClosed, setRecurring, withRepeat, type Month } from '../lib/months';
+import { applyRecurring, setRecurring, withRepeat } from '../lib/months';
 import { newId } from '../lib/id';
 import { mergeGroups } from '../lib/backup';
 import { purgeBin, type BinItem } from '../lib/bin';
@@ -61,7 +64,6 @@ interface GroupsContextValue {
   addPayment: (groupId: string, payment: Omit<Payment, 'id' | 'createdAt'>) => Payment;
   deletePayment: (groupId: string, paymentId: string) => void;
   restorePayment: (groupId: string, payment: Payment) => void;
-  setClosed: (groupId: string, month: Month, closed: boolean) => void;
   stopRecurring: (groupId: string, recurringId: string) => void;
   restoreRecurring: (groupId: string, recurring: Recurring) => void;
   /** Adds imported groups; ones with the same id replace the local copy. */
@@ -79,7 +81,13 @@ interface GroupsContextValue {
   unpinGroup: (groupId: string) => void;
   archiveGroup: (groupId: string) => void;
   unarchiveGroup: (groupId: string) => void;
+  /** Call only after the fingerprint or screen lock said yes. */
+  lockGroup: (groupId: string) => void;
+  unlockGroup: (groupId: string) => void;
   profile: Profile;
+  /** Your UPI ids, on this phone (up to 3). */
+  upiIds: UpiId[];
+  setUpiIds: (ids: UpiId[]) => void;
   /** Your name; renames the person you're linked to everywhere as well. */
   setProfileName: (name: string) => void;
   /** Links you to a person; `name` also sets your name (without renaming anyone). */
@@ -106,12 +114,13 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
   const [prefs, setPrefs] = useState<GroupPrefs>({});
   const [profile, setProfile] = useState<Profile>(EMPTY_PROFILE);
   const [meMap, setMeMap] = useState<MeMap>({});
+  const [upiIds, setUpiIds] = useState<UpiId[]>([]);
   const profileRef = useRef(profile);
   profileRef.current = profile;
 
   useEffect(() => {
     loadAll()
-      .then(({ groups, bin: storedBin, people, visits: v, prefs: p, profile: prof, meMap: me }) => {
+      .then(({ groups, bin: storedBin, people, visits: v, prefs: p, profile: prof, meMap: me, upiIds: upi }) => {
         // Older data has no People directory yet: it's built from the groups.
         const now = new Date();
         const reconciled = reconcilePeople(groups, people);
@@ -123,6 +132,7 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
         setPrefs(prunePrefs(p, [...groups, ...bin.map((b) => b.group)]));
         setProfile(prof);
         setMeMap(me);
+        setUpiIds(upi);
       })
       .catch((e) => {
         loadFailed.current = true;
@@ -152,6 +162,9 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (canSave) saveProfile(profile).catch((e) => console.warn('Could not save profile', e));
   }, [profile, canSave]);
+  useEffect(() => {
+    if (canSave) saveUpiIds(upiIds).catch((e) => console.warn('Could not save UPI ids', e));
+  }, [upiIds, canSave]);
   useEffect(() => {
     if (canSave) saveMeMap(meMap).catch((e) => console.warn('Could not save who is me', e));
   }, [meMap, canSave]);
@@ -309,11 +322,6 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
     [editGroup],
   );
 
-  const setClosed = useCallback(
-    (groupId: string, month: Month, closed: boolean) => editGroup(groupId, (g) => setMonthClosed(g, month, closed)),
-    [editGroup],
-  );
-
   const stopRecurring = useCallback(
     (groupId: string, recurringId: string) =>
       editGroup(groupId, (g) => setRecurring(g, (g.recurring ?? []).filter((r) => r.id !== recurringId))),
@@ -357,6 +365,8 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
   const unpinGroup = useCallback((groupId: string) => setPrefs((p) => unpin(p, groupId)), []);
   const archiveGroup = useCallback((groupId: string) => setPrefs((p) => archive(p, groupId)), []);
   const unarchiveGroup = useCallback((groupId: string) => setPrefs((p) => unarchive(p, groupId)), []);
+  const lockGroup = useCallback((groupId: string) => setPrefs((p) => lock(p, groupId)), []);
+  const unlockGroup = useCallback((groupId: string) => setPrefs((p) => unlock(p, groupId)), []);
 
   const setProfileName = useCallback(
     (name: string) => {
@@ -397,7 +407,6 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
       addPayment,
       deletePayment,
       restorePayment,
-      setClosed,
       stopRecurring,
       restoreRecurring,
       importGroups,
@@ -410,7 +419,11 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
       unpinGroup,
       archiveGroup,
       unarchiveGroup,
+      lockGroup,
+      unlockGroup,
       profile,
+      upiIds,
+      setUpiIds,
       setProfileName,
       linkProfile,
       meMap,
@@ -432,7 +445,6 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
       addPayment,
       deletePayment,
       restorePayment,
-      setClosed,
       stopRecurring,
       restoreRecurring,
       importGroups,
@@ -445,7 +457,11 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
       unpinGroup,
       archiveGroup,
       unarchiveGroup,
+      lockGroup,
+      unlockGroup,
       profile,
+      upiIds,
+      setUpiIds,
       setProfileName,
       linkProfile,
       meMap,

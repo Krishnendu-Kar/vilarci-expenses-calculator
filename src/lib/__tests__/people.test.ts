@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyMembers, nameTakenIn, netsFor, personForProfile, reconcilePeople, renameInGroups, resolveMe, totals } from '../people';
+import { applyMembers, nameTakenIn, netsByPerson, netsFor, personForProfile, reconcilePeople, renameInGroups, resolveMe, totals } from '../people';
 import { expense, group } from './fixtures';
 import type { Group, Person } from '../../types';
 
@@ -98,5 +98,13 @@ describe('netsFor / totals', () => {
     const nets = netsFor([goa, mess, dust], 'A');
     assert.deepEqual(nets.map((n) => n.net), [5000, -15000, -50]);
     assert.deepEqual(totals(nets), { owed: 5000, owes: 15000 });
+  });
+
+  it('gives everyone the same nets in one pass as netsFor does one by one', () => {
+    const goa = group(['A', 'B'], [expense('x', 100, 'A', ['A', 'B'])], 'goa');
+    const mess = group(['A', 'C'], [expense('y', 300, 'C', ['A', 'C'])], 'mess');
+    const all = netsByPerson([goa, mess]);
+    for (const id of ['A', 'B', 'C']) assert.deepEqual(all.get(id), netsFor([goa, mess], id));
+    assert.equal(all.get('Z'), undefined);
   });
 });

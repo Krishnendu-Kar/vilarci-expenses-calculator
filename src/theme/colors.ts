@@ -53,6 +53,20 @@ export const darkColors: Palette = {
   snackbar: '#3A2C2F',
 };
 
+// One colour per group type, for the icon tile on Home and in search:
+// `fg` for the icon, `bg` for the tile behind it.
+const KIND_LIGHT = {
+  trip: { fg: '#4F46E5', bg: '#EEF2FF' },
+  hostel: { fg: '#0F766E', bg: '#CCFBF1' },
+  other: { fg: '#C2410C', bg: '#FFEDD5' },
+};
+const KIND_DARK: typeof KIND_LIGHT = {
+  trip: { fg: '#A5B4FC', bg: 'rgba(99,102,241,0.18)' },
+  hostel: { fg: '#5EEAD4', bg: 'rgba(20,184,166,0.16)' },
+  other: { fg: '#FDBA74', bg: 'rgba(234,88,12,0.18)' },
+};
+export const kindTint = (kind: keyof typeof KIND_LIGHT, dark: boolean) => (dark ? KIND_DARK : KIND_LIGHT)[kind] ?? KIND_LIGHT.other;
+
 // Avatar tints, picked per member from their name so they stay stable.
 // White initials read on all of them in both themes.
 export const avatarColors = ['#7A1F2B', '#1E4FA8', '#2E7D32', '#B5651D', '#6A3FA0', '#00838F', '#AD1457', '#5D6D1E'];

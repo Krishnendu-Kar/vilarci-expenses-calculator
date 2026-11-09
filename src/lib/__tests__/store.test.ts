@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { createStore, LEGACY_KEYS, type Db, type LegacyData } from '../db/store';
 import { planGroups } from '../db/rows';
+import { MIGRATIONS } from '../db/schema';
 import { isUuid, remapGroup } from '../legacyIds';
 import { sanitizeGroups } from '../migrate';
 import type { ExpenseDraft } from '../drafts';
@@ -318,30 +319,75 @@ describe('SQLite store', () => {
     const id = 'aaaaaaaa-0000-4000-8000-0000000000aa';
     const p = [{ id, name: 'Krish', createdAt: 1 }];
     await s.savePeople(p);
-    await s.savePrefs({ [id]: { pinnedAt: 1, pinUntil: 99 } });
+    await s.savePrefs({ [id]: { pinnedAt: 1, pinUntil: 99, lockedAt: 7 } });
     await s.saveVisits({ [id]: { count: 2, last: 3 } });
     await s.saveMeMap({ g: id });
     await s.saveProfile({ name: 'Krish', personId: id });
     await s.saveSetting('theme', 'light');
     await s.setLastBackup(42);
+    await s.saveUpiIds([{ vpa: 'krish@okaxis', label: 'GPay' }]);
     await s.saveDraft('g', draft);
     let read = await reopen(db).loadAll();
     assert.deepEqual(read.people, p);
-    assert.deepEqual(read.prefs, { [id]: { pinnedAt: 1, pinUntil: 99 } });
+    assert.deepEqual(read.prefs, { [id]: { pinnedAt: 1, pinUntil: 99, lockedAt: 7 } });
     assert.deepEqual(read.visits, { [id]: { count: 2, last: 3 } });
     assert.deepEqual(read.meMap, { g: id });
     assert.deepEqual(read.profile, { name: 'Krish', personId: id });
     assert.equal(await s.loadSetting('theme'), 'light');
     assert.equal(await s.getLastBackup(), 42);
+    assert.deepEqual(read.upiIds, [{ vpa: 'krish@okaxis', label: 'GPay' }]);
     assert.deepEqual(await s.loadDraft('g'), draft);
 
     await s.savePeople([]);
     await s.saveProfile({ name: 'Krish', personId: null });
     await s.clearDraft('g');
+    await s.saveUpiIds([]);
     read = await reopen(db).loadAll();
     assert.deepEqual(read.people, []);
     assert.equal(read.profile.personId, null);
     assert.equal(await s.loadDraft('g'), null);
+    assert.deepEqual(read.upiIds, []);
+  });
+
+  it('upgrades a 1.2 database by itself and keeps everything', async () => {
+    // A phone on 1.2: tables at version 1, data already copied from AsyncStorage.
+    const { raw, db } = memoryDb();
+    raw.exec(`${MIGRATIONS[0]}\nPRAGMA user_version = 1;`);
+    const old = memoryDb();
+    await reopen(old.db, legacy).loadAll();
+    for (const table of ['settings', 'people', 'groups', 'members', 'expenses', 'recurring', 'payers', 'splits', 'payments', 'closed_months', 'group_prefs', 'visits', 'me', 'drafts', 'legacy_ids']) {
+      const rows = old.raw.prepare(`SELECT * FROM ${table}`).all() as Record<string, string | number | null>[];
+      for (const r of rows) {
+        // Columns new in version 2; a 1.2 database doesn't have them.
+        const cols = Object.keys(r).filter((c) => !(table === 'expenses' && c === 'month') && !(table === 'group_prefs' && c === 'locked_at'));
+        raw.prepare(`INSERT INTO ${table} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`).run(...cols.map((c) => r[c]));
+      }
+    }
+
+    const s = reopen(db);
+    const all = await s.loadAll();
+    assert.equal((raw.prepare('PRAGMA user_version').get() as { user_version: number }).user_version, MIGRATIONS.length);
+    assert.deepEqual(all.groups, (await reopen(old.db).loadAll()).groups, 'same groups as before the upgrade');
+
+    // The new column works: a forgotten bill from last month.
+    const g = all.groups[0];
+    const late = { ...g.expenses[0], date: '2026-11-02', month: '2026-10' };
+    await s.saveGroups([{ ...g, expenses: [late, ...g.expenses.slice(1)] }], all.bin);
+    const read = await reopen(db).loadAll();
+    assert.equal(read.groups[0].expenses[0].month, '2026-10');
+    assert.ok(!('month' in read.groups[0].expenses[1]), 'other expenses stay without one');
+  });
+
+  it('adds the lock column to a database a test build left at version 2', async () => {
+    const { raw, db } = memoryDb();
+    raw.exec(`${MIGRATIONS[0]}
+${MIGRATIONS[1]}
+PRAGMA user_version = 2;`);
+    raw.exec("INSERT INTO settings (key, value) VALUES ('legacy_imported_at', '1')");
+    const s = reopen(db);
+    await s.loadAll();
+    await s.savePrefs({ g: { lockedAt: 5 } });
+    assert.deepEqual((await reopen(db).loadAll()).prefs, { g: { lockedAt: 5 } });
   });
 
   it('knows every AsyncStorage key older versions used', () => {

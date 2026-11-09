@@ -37,6 +37,7 @@ export const {
   savePrefs,
   saveVisits,
   saveProfile,
+  saveUpiIds,
   saveMeMap,
   loadSetting,
   saveSetting,

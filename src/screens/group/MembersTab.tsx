@@ -4,7 +4,6 @@ import { Avatar } from '../../components/Avatar';
 import { EmptyState } from '../../components/EmptyState';
 import { SearchBar } from '../../components/SearchBar';
 import { isSettled, type MemberBalance } from '../../lib/split';
-import type { MonthBalance } from '../../lib/months';
 import { searchMembers } from '../../lib/search';
 import { money } from '../../lib/money';
 import { makeStyles } from '../../theme/ThemeContext';
@@ -13,15 +12,14 @@ import { font, spacing } from '../../theme/tokens';
 import { useTabStyles } from './styles';
 
 interface Props {
-  balances: (MemberBalance | MonthBalance)[];
-  /** Hostel/flat month view: rows also show what came in from earlier months. */
-  monthly: boolean;
+  /** All-time, whatever the Expenses filter shows. */
+  balances: MemberBalance[];
   names: Record<string, string>;
   meId: string | null;
 }
 
 /** One row per member: what they paid, their fair share, and what they owe or get back. */
-export function MembersTab({ balances, monthly, names, meId }: Props) {
+export function MembersTab({ balances, names, meId }: Props) {
   const t = useTabStyles();
   const styles = useStyles();
   const i18n = useI18n();
@@ -35,12 +33,11 @@ export function MembersTab({ balances, monthly, names, meId }: Props) {
   return (
     <ScrollView contentContainerStyle={t.list} keyboardShouldPersistTaps="handled">
       <SearchBar value={query} onChangeText={setQuery} placeholder={i18n.t('members.search')} />
-      <Text style={t.explain}>{monthly ? i18n.t('members.explainMonth') : i18n.t('members.explain')}</Text>
+      <Text style={t.explain}>{i18n.t('members.explain')}</Text>
       {rows.length === 0 ? (
         <EmptyState icon="search-outline" title={i18n.t('members.noMatch.title')} body={i18n.t('members.noMatch.body', { query: query.trim() })} />
       ) : null}
       {rows.map((b) => {
-        const carried = 'carried' in b ? b.carried : 0;
         const me = b.memberId === meId;
         return (
           <View key={b.memberId} style={[t.row, me && t.rowMe]}>
@@ -57,13 +54,6 @@ export function MembersTab({ balances, monthly, names, meId }: Props) {
                 {b.sent ? ` · ${i18n.t('members.sent', { amount: money(b.sent) })}` : ''}
                 {b.received ? ` · ${i18n.t('members.got', { amount: money(b.received) })}` : ''}
               </Text>
-              {monthly && !isSettled(carried) ? (
-                <Text style={t.rowMeta}>
-                  {carried > 0
-                    ? i18n.t('members.carriedIn', { amount: money(carried) })
-                    : i18n.t('members.carriedOut', { amount: money(-carried) })}
-                </Text>
-              ) : null}
             </View>
             <View style={t.rowRight}>
               {isSettled(b.net) ? (

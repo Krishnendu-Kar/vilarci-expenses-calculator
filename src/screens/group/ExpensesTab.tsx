@@ -9,23 +9,27 @@ import { useUndo } from '../../context/UndoContext';
 import { useMenu, type MenuAnchor, type MenuItem } from '../../context/MenuContext';
 import { counted, sortExpenses } from '../../lib/split';
 import { searchExpenses } from '../../lib/search';
-import { isClosed, monthOf } from '../../lib/months';
+import { expenseMonth, isFiltered, NO_FILTER, type ExpenseFilter } from '../../lib/months';
 import { money } from '../../lib/money';
 import { dayLabel, monthLabel } from '../../lib/format';
 import { payerText, splitShort } from '../../lib/describe';
-import { notify } from '../../lib/confirm';
 import { categoryOf } from '../../data/categories';
 import { makeStyles, useTheme } from '../../theme/ThemeContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { font, radii, spacing } from '../../theme/tokens';
 import { useTabStyles } from './styles';
+import { FilterChips } from './FilterChips';
 import type { Expense, Group } from '../../types';
 
 interface Props {
   group: Group;
-  /** What the tab lists: the month's expenses for hostel groups, else all. */
+  /** The expenses the filter lets through. */
   shown: Expense[];
-  month: string | null;
+  filter: ExpenseFilter;
+  onFilter: (f: ExpenseFilter) => void;
+  onOpenFilter: () => void;
+  /** Hostel/flat groups: opens the list of repeating expenses. */
+  onRecurring: () => void;
   names: Record<string, string>;
   onOpen: (e: Expense) => void;
 }
@@ -51,7 +55,7 @@ function byDay(list: Expense[]): Section[] {
   }));
 }
 
-export function ExpensesTab({ group, shown, month, names, onOpen }: Props) {
+export function ExpensesTab({ group, shown, filter, onFilter, onOpenFilter, onRecurring, names, onOpen }: Props) {
   const t = useTabStyles();
   const styles = useStyles();
   const { colors } = useTheme();
@@ -62,12 +66,18 @@ export function ExpensesTab({ group, shown, month, names, onOpen }: Props) {
   const [query, setQuery] = useState('');
   const [archivedOpen, setArchivedOpen] = useState(false);
   const searching = !!query.trim();
+  const filtered = isFiltered(filter);
   const repeats = new Set((group.recurring ?? []).map((r) => r.id));
+  const hostel = group.kind === 'hostel';
+  const repeatCount = group.recurring?.length ?? 0;
+  const filterCount = (filter.month ? 1 : 0) + filter.categories.length;
+  const shownLive = shown.filter(counted);
+  const shownTotal = shownLive.reduce((s, e) => s + e.amount, 0);
 
   const sections = useMemo((): Section[] => {
-    // A search looks through every month and the archive too.
+    // A search looks inside the filter, archived expenses included.
     if (searching) {
-      return byDay(searchExpenses(group.expenses, query, names, group.members.length, (k) => categoryOf(k).label));
+      return byDay(searchExpenses(shown, query, names, group.members.length, (k) => categoryOf(k).label));
     }
     const live = shown.filter(counted);
     const pinned = live.filter((e) => e.pinnedAt != null).sort((a, b) => (b.pinnedAt ?? 0) - (a.pinnedAt ?? 0));
@@ -82,14 +92,31 @@ export function ExpensesTab({ group, shown, month, names, onOpen }: Props) {
     // The language is a dependency: category names are searched in it.
   }, [group, shown, query, searching, names, archivedOpen, i18n.lang]);
 
+  // With a filter on, nothing found may just be outside it: offer to drop it.
+  const clearFilter = filtered ? (
+    <Pressable onPress={() => onFilter(NO_FILTER)} style={({ pressed }) => [styles.clearBtn, pressed && t.pressed]}>
+      <Text style={styles.clearText}>{searching ? i18n.t('filter.searchAll') : i18n.t('filter.showAll')}</Text>
+    </Pressable>
+  ) : null;
   const empty = searching ? (
-    <EmptyState icon="search-outline" title={i18n.t('expenses.noMatch.title')} body={i18n.t('expenses.noMatch.body', { query: query.trim() })} />
-  ) : group.expenses.length && month ? (
-    <EmptyState
-      icon="calendar-outline"
-      title={i18n.t('expenses.emptyMonth.title', { month: monthLabel(month) })}
-      body={i18n.t('expenses.emptyMonth.body')}
-    />
+    <View>
+      <EmptyState icon="search-outline" title={i18n.t('expenses.noMatch.title')} body={i18n.t('expenses.noMatch.body', { query: query.trim() })} />
+      {clearFilter}
+    </View>
+  ) : group.expenses.length && filter.month && !filter.categories.length ? (
+    <View>
+      <EmptyState
+        icon="calendar-outline"
+        title={i18n.t('expenses.emptyMonth.title', { month: monthLabel(filter.month) })}
+        body={i18n.t('expenses.emptyMonth.body')}
+      />
+      {clearFilter}
+    </View>
+  ) : group.expenses.length && filtered ? (
+    <View>
+      <EmptyState icon="funnel-outline" title={i18n.t('filter.empty.title')} body={i18n.t('filter.empty.body')} />
+      {clearFilter}
+    </View>
   ) : (
     <EmptyState icon="receipt-outline" title={i18n.t('expenses.empty.title')} body={i18n.t('expenses.empty.body')} />
   );
@@ -113,9 +140,6 @@ export function ExpensesTab({ group, shown, month, names, onOpen }: Props) {
 
   const pickMenu = (e: Expense, key: string) => {
     if (key === 'pin' || key === 'unpin') return pinExpense(group.id, e.id, key === 'pin');
-    // Archiving or deleting changes the month's numbers, so a closed month says no.
-    const m = monthOf(e.date);
-    if (isClosed(group, m)) return notify(i18n.t('month.lockedTitle', { month: monthLabel(m) }), i18n.t('month.lockedBody'));
     if (key === 'archive') {
       archiveExpense(group.id, e.id, true);
       showUndo(i18n.t('expenses.archivedDone', { name: e.title }), () => archiveExpense(group.id, e.id, false));
@@ -136,8 +160,39 @@ export function ExpensesTab({ group, shown, month, names, onOpen }: Props) {
       ListHeaderComponent={
         group.expenses.length ? (
           <View>
-            <SearchBar value={query} onChangeText={setQuery} placeholder={i18n.t('expenses.search')} />
-            {searching && month ? <Text style={t.explain}>{i18n.t('expenses.searchAllMonths')}</Text> : null}
+            <View style={styles.searchRow}>
+              <View style={styles.flex}>
+                <SearchBar value={query} onChangeText={setQuery} placeholder={i18n.t('expenses.search')} />
+              </View>
+              <Pressable
+                onPress={onOpenFilter}
+                hitSlop={6}
+                accessibilityRole="button"
+                accessibilityLabel={i18n.t('filter.button')}
+                style={({ pressed }) => [styles.filterBtn, filtered && styles.filterBtnOn, pressed && t.pressed]}
+              >
+                <Ionicons name="funnel-outline" size={18} color={filtered ? colors.onPrimary : colors.tint} />
+                {filterCount ? <Text style={styles.filterCount}>{filterCount}</Text> : null}
+              </Pressable>
+            </View>
+            <FilterChips filter={filter} onChange={onFilter} />
+            {filtered && shownLive.length ? (
+              <Text style={t.explain}>
+                {i18n.t('count.expense', { count: shownLive.length })} · {money(shownTotal)}
+              </Text>
+            ) : null}
+            {hostel ? (
+              <Pressable onPress={onRecurring} style={({ pressed }) => [styles.repeatRow, pressed && t.pressed]}>
+                <Ionicons name="repeat-outline" size={18} color={colors.tint} />
+                <View style={styles.flex}>
+                  <Text style={styles.repeatTitle}>{i18n.t('recurring.title')}</Text>
+                  <Text style={styles.repeatBody} numberOfLines={1}>
+                    {repeatCount ? i18n.t('recurring.count', { count: repeatCount }) : i18n.t('recurring.none')}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+              </Pressable>
+            ) : null}
           </View>
         ) : undefined
       }
@@ -183,6 +238,11 @@ export function ExpensesTab({ group, shown, month, names, onOpen }: Props) {
                   {item.title}
                 </Text>
                 {archived ? <Text style={styles.tag}>{i18n.t('expenses.archivedTag')}</Text> : null}
+                {item.month ? (
+                  <Text style={styles.tag} numberOfLines={1}>
+                    {i18n.t('expenses.forMonth', { month: monthLabel(expenseMonth(item)) })}
+                  </Text>
+                ) : null}
               </View>
               <Text style={t.rowMeta} numberOfLines={1}>
                 {i18n.t('expenses.paidLine', { payers: payerText(item, names), split: splitShort(item, group.members.length) })}
@@ -207,6 +267,46 @@ export function ExpensesTab({ group, shown, month, names, onOpen }: Props) {
 
 const useStyles = makeStyles((c) => ({
   flex: { flex: 1 },
+  searchRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing(2) },
+  filterBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing(1),
+    height: 44,
+    minWidth: 44,
+    paddingHorizontal: spacing(3),
+    justifyContent: 'center',
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    borderColor: c.border,
+    backgroundColor: c.surface,
+  },
+  filterBtnOn: { backgroundColor: c.primary, borderColor: c.primary },
+  filterCount: { fontSize: font.sm, fontWeight: '800', color: c.onPrimary },
+  repeatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing(3),
+    backgroundColor: c.surface,
+    borderWidth: 1,
+    borderColor: c.border,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing(3.5),
+    paddingVertical: spacing(2.5),
+    marginBottom: spacing(2),
+  },
+  repeatTitle: { fontSize: font.sm + 1, fontWeight: '700', color: c.textPrimary },
+  repeatBody: { fontSize: font.sm, color: c.textSecondary, marginTop: 1 },
+  clearBtn: {
+    alignSelf: 'center',
+    marginTop: -spacing(6),
+    paddingHorizontal: spacing(5),
+    paddingVertical: spacing(2.5),
+    borderRadius: radii.pill,
+    borderWidth: 1.5,
+    borderColor: c.tint,
+  },
+  clearText: { color: c.tint, fontWeight: '700', fontSize: font.sm + 1 },
   dayHead: {
     flexDirection: 'row',
     justifyContent: 'space-between',

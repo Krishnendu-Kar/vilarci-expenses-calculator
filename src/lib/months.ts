@@ -1,11 +1,10 @@
-import type { Expense, Group, Payment, Recurring } from '../types';
-import { computeBalances, type MemberBalance } from './split';
+import type { CategoryKey, Expense, Group, Recurring } from '../types';
 import { toISODate } from './format';
 
-// Hostel/flat groups run month by month: each month is viewed on its own,
-// anything unpaid carries into the next month, a finished month can be
-// closed (its expenses are then locked), and repeating costs like rent are
-// added by themselves.
+// Months: the Expenses list and Stats can show one month at a time (hostel
+// groups open on this month), an expense can count for another month than
+// its date's, and hostel/flat groups add repeating costs like rent by
+// themselves. Balances are always all-time.
 
 /** 'YYYY-MM'. Compares correctly as a plain string. */
 export type Month = string;
@@ -30,65 +29,56 @@ export function dueDate(m: Month, day: number) {
   return `${m}-${String(Math.min(day, daysIn(m))).padStart(2, '0')}`;
 }
 
-/** Payments have no date of their own; they count in the month they were recorded. */
-export const paymentMonth = (p: Payment): Month => monthOf(toISODate(new Date(p.createdAt)));
+/** The month an expense counts for: its own `month` if set, else its date's. */
+export const expenseMonth = (e: Expense): Month => e.month ?? monthOf(e.date);
 
-export function isClosed(group: Group, m: Month) {
-  return group.closedMonths?.includes(m) ?? false;
+/** An expense can't count for a month further ahead than this. */
+export const MONTHS_AHEAD = 12;
+
+/** The latest month an expense can count for. */
+export const lastPickableMonth = (now = new Date()): Month => addMonths(thisMonth(now), MONTHS_AHEAD);
+
+/**
+ * What the Expenses list and Stats show: one month (null = every month) and
+ * some categories (empty = every category). Members and Settle always use
+ * the whole group.
+ */
+export interface ExpenseFilter {
+  month: Month | null;
+  categories: CategoryKey[];
 }
 
-/** Every month from the group's first activity up to this month (or a later dated expense), oldest first. */
-export function monthsOf(group: Group, now = new Date()): Month[] {
-  const seen = [
-    monthOf(toISODate(new Date(group.createdAt))),
-    ...group.expenses.map((e) => monthOf(e.date)),
-    ...group.payments.map(paymentMonth),
-  ];
-  const current = thisMonth(now);
-  let first = seen.reduce((a, b) => (b < a ? b : a), current);
-  const last = seen.reduce((a, b) => (b > a ? b : a), current);
-  const out: Month[] = [];
-  // Capped so a stray old date can't make a list of hundreds of months.
-  while (first <= last && out.length < 120) {
-    out.push(first);
-    first = addMonths(first, 1);
-  }
-  return out;
-}
+export const NO_FILTER: ExpenseFilter = { month: null, categories: [] };
 
-/** The group with only month `m`'s expenses and payments: what the month's tabs show. */
-export function inMonth(group: Group, m: Month): Group {
-  return {
-    ...group,
-    expenses: group.expenses.filter((e) => monthOf(e.date) === m),
-    payments: group.payments.filter((p) => paymentMonth(p) === m),
-  };
-}
+export const isFiltered = (f: ExpenseFilter) => f.month !== null || f.categories.length > 0;
 
-function beforeMonth(group: Group, m: Month): Group {
-  return {
-    ...group,
-    expenses: group.expenses.filter((e) => monthOf(e.date) < m),
-    payments: group.payments.filter((p) => paymentMonth(p) < m),
-  };
-}
-
-export interface MonthBalance extends MemberBalance {
-  /** Balance brought in from earlier months (same sign rule as `net`). */
-  carried: number;
+export function matchesFilter(e: Expense, f: ExpenseFilter) {
+  return (f.month === null || expenseMonth(e) === f.month) && (f.categories.length === 0 || f.categories.includes(e.category));
 }
 
 /**
- * One month's numbers per person: paid/share/sent/received are that month's,
- * `carried` is everything before it, and `net` is where they stand at the
- * end of the month (carried + this month).
+ * The group with only the expenses the filter lets through. Payments stay:
+ * only "paid" and "share" are read from a filtered group.
  */
-export function monthBalances(group: Group, m: Month): MonthBalance[] {
-  const before = new Map(computeBalances(beforeMonth(group, m)).map((b) => [b.memberId, b.net]));
-  return computeBalances(inMonth(group, m)).map((b) => {
-    const carried = before.get(b.memberId) ?? 0;
-    return { ...b, carried, net: b.net + carried };
-  });
+export function filterGroup(group: Group, f: ExpenseFilter): Group {
+  return isFiltered(f) ? { ...group, expenses: group.expenses.filter((e) => matchesFilter(e, f)) } : group;
+}
+
+/** Months with at least one expense, marked in the month picker. */
+export function monthsWithExpenses(group: Group): Set<Month> {
+  return new Set(group.expenses.map(expenseMonth));
+}
+
+/**
+ * The earliest month worth stepping back to with the ‹ arrow: the group's
+ * first expense or the month it was made, and never later than this month.
+ */
+export function firstMonthOf(group: Group, now = new Date()): Month {
+  let first = thisMonth(now);
+  const made = monthOf(toISODate(new Date(group.createdAt)));
+  if (made < first) first = made;
+  for (const m of monthsWithExpenses(group)) if (m < first) first = m;
+  return first;
 }
 
 /** Turns a saved expense into the monthly repeat that copies it. */
@@ -114,8 +104,7 @@ const MAX_CATCH_UP = 36;
 
 /**
  * Adds every repeat that has come due (one expense per month, on its day)
- * up to today. Closed months are skipped. Returns the same group when
- * nothing was due.
+ * up to today. Returns the same group when nothing was due.
  */
 export function applyRecurring(group: Group, now: Date, newId: () => string): Group {
   if (group.kind !== 'hostel' || !group.recurring?.length) return group;
@@ -128,22 +117,20 @@ export function applyRecurring(group: Group, now: Date, newId: () => string): Gr
     for (let i = 0, m = addMonths(last, 1); m <= current && i < MAX_CATCH_UP; i++, m = addMonths(m, 1)) {
       const date = dueDate(m, r.day);
       if (date > today) break;
-      if (!isClosed(group, m)) {
-        added.push({
-          id: newId(),
-          title: r.title,
-          amount: r.amount,
-          category: r.category,
-          payers: r.payers,
-          splitMode: r.splitMode,
-          splitAmong: r.splitAmong,
-          ...(r.splitValues ? { splitValues: r.splitValues } : {}),
-          date,
-          ...(r.note ? { note: r.note } : {}),
-          recurringId: r.id,
-          createdAt: now.getTime() + added.length,
-        });
-      }
+      added.push({
+        id: newId(),
+        title: r.title,
+        amount: r.amount,
+        category: r.category,
+        payers: r.payers,
+        splitMode: r.splitMode,
+        splitAmong: r.splitAmong,
+        ...(r.splitValues ? { splitValues: r.splitValues } : {}),
+        date,
+        ...(r.note ? { note: r.note } : {}),
+        recurringId: r.id,
+        createdAt: now.getTime() + added.length,
+      });
       last = m;
     }
     if (last === r.lastMonth) return r;
@@ -189,13 +176,4 @@ export function withRepeat(
 export function setRecurring(group: Group, recurring: Recurring[]): Group {
   const { recurring: _old, ...rest } = group;
   return recurring.length ? { ...rest, recurring } : rest;
-}
-
-/** Closes or reopens a month. */
-export function setMonthClosed(group: Group, m: Month, closed: boolean): Group {
-  const months = new Set(group.closedMonths ?? []);
-  if (closed) months.add(m);
-  else months.delete(m);
-  const { closedMonths: _old, ...rest } = group;
-  return months.size ? { ...rest, closedMonths: [...months].sort() } : rest;
 }

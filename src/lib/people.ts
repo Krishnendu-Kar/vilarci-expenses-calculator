@@ -123,6 +123,40 @@ export function netsFor(groups: Group[], personId: string): GroupNet[] {
   }));
 }
 
+/**
+ * Everyone's balance in each of their groups, working each group out once
+ * (netsFor per person would redo a group for every member in it).
+ */
+export function netsByPerson(groups: Group[]): Map<string, GroupNet[]> {
+  const out = new Map<string, GroupNet[]>();
+  for (const group of groups) {
+    const balances = new Map(computeBalances(group).map((b) => [b.memberId, b.net]));
+    for (const m of group.members) {
+      const list = out.get(m.id) ?? [];
+      list.push({ group, net: balances.get(m.id) ?? 0 });
+      out.set(m.id, list);
+    }
+  }
+  return out;
+}
+
+export interface MyNet {
+  group: Group;
+  /** Who you are in this group; null when the app can't tell. */
+  me: string | null;
+  /** Your balance there; null when the app can't tell who you are. */
+  net: number | null;
+}
+
+/** Your balance in each group, for Home and Profile. */
+export function myNets(groups: Group[], profile: Profile, meMap: Record<string, string>): MyNet[] {
+  return groups.map((group) => {
+    const me = resolveMe(group, profile, meMap[group.id]);
+    const net = me ? (computeBalances(group).find((b) => b.memberId === me)?.net ?? 0) : null;
+    return { group, me, net };
+  });
+}
+
 /** Adds up balances: what others owe this person, and what they owe. Under ₹1 counts as settled. */
 export function totals(nets: { net: number }[]) {
   let owed = 0;

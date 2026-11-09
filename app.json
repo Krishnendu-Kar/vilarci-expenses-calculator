@@ -41,7 +41,21 @@
           "backgroundColor": "#9A0003"
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Vilarci E-Split uses Face ID to open groups you have locked."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Vilarci E-Split uses the camera only to scan group QR codes.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ]
     ]
   }
 }

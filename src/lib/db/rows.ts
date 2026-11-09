@@ -29,6 +29,7 @@ const COLUMNS = {
     'category',
     'split_mode',
     'date',
+    'month',
     'note',
     'recurring_id',
     'pinned_at',
@@ -107,6 +108,7 @@ class Writer {
       e.category,
       e.splitMode,
       e.date,
+      e.month ?? null,
       e.note ?? null,
       e.recurringId ?? null,
       e.pinnedAt ?? null,
@@ -216,6 +218,7 @@ export interface ExpenseRow {
   category: string;
   split_mode: string;
   date: string;
+  month: string | null;
   note: string | null;
   recurring_id: string | null;
   pinned_at: number | null;
@@ -356,6 +359,7 @@ export function assembleGroups(t: GroupTables): Saved[] {
             category: e.category as CategoryKey,
             ...moneyOf(g.id, e),
             date: e.date,
+            ...(e.month !== null ? { month: e.month } : {}),
             ...(e.note !== null ? { note: e.note } : {}),
             ...(e.recurring_id !== null ? { recurringId: e.recurring_id } : {}),
             ...(e.pinned_at !== null ? { pinnedAt: e.pinned_at } : {}),

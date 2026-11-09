@@ -152,6 +152,19 @@ describe('schema v3: hostel months and repeats', () => {
     assert.equal(parsed.expenses[0].recurringId, 'r1');
   });
 
+  it("keeps an expense's own month through a backup, and only when it differs from the date's", () => {
+    const late = { ...rent, id: 'late', date: '2026-11-02', month: '2026-10' };
+    const early = { ...rent, id: 'early', date: '2026-11-20', month: '2026-12' };
+    const same = { ...rent, id: 'same', date: '2026-11-05', month: '2026-11' };
+    const bad = { ...rent, id: 'bad', date: '2026-11-05', month: '2026-13' };
+    const parsed = parseBackup(buildBackup([{ ...g, expenses: [late, early, same, bad] }])).groups[0];
+    assert.deepEqual(
+      parsed.expenses.map((e) => [e.id, e.month]),
+      [['late', '2026-10'], ['early', '2026-12'], ['same', undefined], ['bad', undefined]],
+    );
+    assert.ok(!('month' in parsed.expenses[2]), 'no empty key left behind');
+  });
+
   it('drops broken repeats and bad months', () => {
     const bad = {
       ...g,

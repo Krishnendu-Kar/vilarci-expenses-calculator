@@ -1,4 +1,4 @@
-import type { Group } from '../types';
+import type { Group, UpiId } from '../types';
 import {
   categoryTotals,
   computeBalances,
@@ -11,6 +11,7 @@ import {
 } from './split';
 import { balanceWords, payerLong, splitLong } from './describe';
 import { money } from './money';
+import { vpaList } from './upi';
 import { longDate } from './format';
 import { categoryOf, groupKindOf } from '../data/categories';
 import { LOGO_DATA_URI } from '../data/logo';
@@ -28,6 +29,18 @@ interface ReportData {
   /** Oldest first: reports read like a diary. */
   expenses: Group['expenses'];
   range: string;
+}
+
+/** You, in this group, and the UPI ids people can pay you on. */
+export interface PayTo {
+  memberId: string;
+  upiIds: UpiId[];
+}
+
+/** "Pay Krish by UPI: …", only when someone owes you and you have a UPI id. */
+function payLine(d: ReportData, pay?: PayTo): string | null {
+  if (!pay?.upiIds.length || !d.transfers.some((tr) => tr.to === pay.memberId)) return null;
+  return t('report.payByUpi', { name: d.names[pay.memberId] ?? '', ids: vpaList(pay.upiIds) });
 }
 
 function collect(group: Group): ReportData {
@@ -50,7 +63,7 @@ function collect(group: Group): ReportData {
 }
 
 /** WhatsApp-friendly text (*bold* renders in WhatsApp, reads fine elsewhere). */
-export function buildTextReport(group: Group) {
+export function buildTextReport(group: Group, pay?: PayTo) {
   const d = collect(group);
   const lines: string[] = [
     t('report.title', { name: group.name }),
@@ -66,6 +79,8 @@ export function buildTextReport(group: Group) {
   for (const tr of d.transfers) {
     lines.push(t('report.pays', { from: d.names[tr.from], to: d.names[tr.to], amount: money(tr.amount) }));
   }
+  const upi = payLine(d, pay);
+  if (upi) lines.push(upi);
   lines.push('');
 
   lines.push(t('report.balances'));
@@ -112,8 +127,9 @@ const esc = (s: string) =>
 const fullDate = (d: Date) => d.toLocaleDateString(dateLocale(), { day: 'numeric', month: 'short', year: 'numeric' });
 
 /** Self-contained HTML (no external assets) for expo-print. */
-export function buildHtmlReport(group: Group, now = new Date()) {
+export function buildHtmlReport(group: Group, now = new Date(), pay?: PayTo) {
   const d = collect(group);
+  const upi = payLine(d, pay);
   const n = (id: string) => esc(d.names[id] ?? '?');
   const cats = categoryTotals(group);
   const maxCat = Math.max(1, ...cats.map((c) => c.amount));
@@ -198,6 +214,7 @@ export function buildHtmlReport(group: Group, now = new Date()) {
   .transfer { display: flex; justify-content: space-between; align-items: center; border: 1px solid #EADCDA; border-left: 4px solid #7A1F2B; border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; font-size: 13px; }
   .transfer .amt { font-weight: 800; color: #7A1F2B; font-size: 15px; }
   .settled { color: #2E7D32; font-weight: 700; }
+  .upi { margin: 8px 0 0; font-size: 12px; font-weight: 700; color: #7A1F2B; }
   .bar-cell { width: 45%; }
   .bar { height: 8px; border-radius: 4px; background: #A6414C; min-width: 2px; }
   footer { margin-top: 28px; color: #8A6F72; font-size: 10px; text-align: center; }
@@ -218,6 +235,7 @@ export function buildHtmlReport(group: Group, now = new Date()) {
 
   <h2>${esc(t('pdf.whoPays'))}</h2>
   ${transfers}
+  ${upi ? `<p class="upi">${esc(upi)}</p>` : ''}
 
   <h2>${esc(t('pdf.balances'))}</h2>
   <table><tr><th>${esc(t('pdf.person'))}</th><th class="r">${esc(t('pdf.paid'))}</th><th class="r">${esc(t('pdf.fairShare'))}</th><th class="r">${esc(t('pdf.settlePayments'))}</th><th class="r">${esc(t('pdf.balance'))}</th></tr>${balances}</table>

@@ -31,6 +31,15 @@ describe('text report', () => {
   it('says when everyone is settled', () => {
     assert.match(buildTextReport(group(P, [])), /Everyone is settled up/);
   });
+
+  it('adds where to pay you by UPI, only when someone owes you', () => {
+    const upiIds = [{ vpa: 'a@okaxis', label: 'GPay' }, { vpa: 'a@ybl' }];
+    // A gets money back from B and C.
+    assert.match(buildTextReport(g(), { memberId: 'A', upiIds }), /Pay Person A by UPI: a@okaxis, a@ybl/);
+    assert.doesNotMatch(buildTextReport(g(), { memberId: 'B', upiIds }), /by UPI/, 'B owes, nobody pays B');
+    assert.doesNotMatch(buildTextReport(g(), { memberId: 'A', upiIds: [] }), /by UPI/);
+    assert.doesNotMatch(buildTextReport(g()), /by UPI/);
+  });
 });
 
 describe('html report', () => {
@@ -48,6 +57,11 @@ describe('html report', () => {
     const html = buildHtmlReport(g());
     assert.ok(html.includes('₹4,500'));
     assert.ok(html.includes('<b>Person C</b> pays <b>Person A</b>'));
+  });
+
+  it('shows your UPI id under who pays whom', () => {
+    const html = buildHtmlReport(g(), new Date(2026, 10, 8), { memberId: 'A', upiIds: [{ vpa: 'a@okaxis' }] });
+    assert.ok(html.includes('<p class="upi">💳 Pay Person A by UPI: a@okaxis</p>'));
   });
 
   it('embeds the logo so the PDF needs no network or asset access', () => {

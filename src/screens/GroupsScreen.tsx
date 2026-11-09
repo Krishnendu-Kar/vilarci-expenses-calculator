@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, Text, TextInput, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, FlatList, Image, Platform, Pressable, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { EmptyState } from '../components/EmptyState';
 import { Fab } from '../components/Fab';
@@ -10,22 +11,34 @@ import { Pager } from '../components/Pager';
 import { ActionSheet } from '../components/ActionSheet';
 import { MoreButton, pressPoint } from '../components/MoreButton';
 import { PrimaryButton } from '../components/PrimaryButton';
+import { Avatar } from '../components/Avatar';
+import { HeroBackground } from '../components/HeroBackground';
+import { DISPLAY_FONT } from '../components/LuxeCard';
 import { useGroups } from '../context/GroupsContext';
 import { useUndo } from '../context/UndoContext';
 import { useMenu, type MenuAnchor, type MenuItem } from '../context/MenuContext';
+import { useLock } from '../context/LockContext';
 import { getLastBackup } from '../lib/storage';
+import { askOwner, lockSupport } from '../lib/deviceLock';
+import { notify } from '../lib/confirm';
 import { computeBalances, counted, groupTotal, suggestTransfers } from '../lib/split';
 import { money } from '../lib/money';
 import { groupKindOf, type IconName } from '../data/categories';
-import { filterGroups, isArchived, isPinned, pinDaysLeft, type GroupFilter, type GroupPref } from '../lib/groupFilters';
+import { filterGroups, isArchived, isLocked, isPinned, pinDaysLeft, type GroupFilter, type GroupPref } from '../lib/groupFilters';
 import { makeStyles, useTheme } from '../theme/ThemeContext';
+import { kindTint } from '../theme/colors';
 import { useI18n } from '../i18n/I18nContext';
 import { font, radii, spacing } from '../theme/tokens';
 import type { Key } from '../i18n';
 import type { Group } from '../types';
 import type { TabProps } from '../navigation/types';
 
+// Bundled, so the top works offline.
+const LOGO = require('../../assets/logo.png');
+
 const BACKUP_NAG_MS = 14 * 24 * 3600 * 1000;
+/** Height of the logo / Scan / Settings row at the top. */
+const TOP_ROW = 44;
 const PIN_DAYS = [1, 7, 15];
 
 const FILTERS: { key: GroupFilter; label: Key; icon?: IconName }[] = [
@@ -46,8 +59,22 @@ const FILTER_EMPTY: Record<Exclude<GroupFilter, 'all'>, { icon: IconName; title:
 };
 
 export function GroupsScreen({ navigation }: TabProps<'Home'>) {
-  const { groups, ready, visits, prefs, pinGroup, unpinGroup, archiveGroup, unarchiveGroup, moveToBin, restoreFromBin } =
-    useGroups();
+  const {
+    groups,
+    ready,
+    visits,
+    prefs,
+    pinGroup,
+    unpinGroup,
+    archiveGroup,
+    unarchiveGroup,
+    lockGroup,
+    unlockGroup,
+    moveToBin,
+    restoreFromBin,
+  } = useGroups();
+  const insets = useSafeAreaInsets();
+  const { isOpen } = useLock();
   const { showUndo } = useUndo();
   const { openMenu } = useMenu();
   const styles = useStyles();
@@ -81,20 +108,21 @@ export function GroupsScreen({ navigation }: TabProps<'Home'>) {
   const onPage = useCallback((i: number) => setFilter(filters[i].key), [filters]);
   const [lastBackup, setLastBackup] = useState<number | null | undefined>(undefined);
 
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      headerRight: () => (
-        <Pressable
-          onPress={() => navigation.navigate('Settings')}
-          hitSlop={10}
-          accessibilityLabel={t('settings.title')}
-          style={styles.headerBtn}
-        >
-          <Ionicons name="settings-outline" size={22} color={colors.white} />
-        </Pressable>
+  const openScan = useCallback(() => navigation.navigate('Scan'), [navigation]);
+  const pull = useMemo(
+    () => ({
+      onPull: openScan,
+      hint: (
+        <View style={styles.pullHint}>
+          <View style={styles.pullCircle}>
+            <Ionicons name="camera-outline" size={24} color={colors.onPrimary} />
+          </View>
+          <Text style={styles.pullText}>{t('scan.short')}</Text>
+        </View>
       ),
-    });
-  }, [navigation, colors, t, styles]);
+    }),
+    [openScan, styles, colors, t],
+  );
 
   // Re-read when coming back from the backup screen.
   useFocusEffect(
@@ -129,6 +157,14 @@ export function GroupsScreen({ navigation }: TabProps<'Home'>) {
     isArchived(prefs[g.id])
       ? { key: 'unarchive', icon: 'arrow-undo-outline', title: t('groupMenu.unarchive') }
       : { key: 'archive', icon: 'archive-outline', title: t('groupMenu.archive') },
+    // Locking uses the phone's fingerprint or screen lock, so not on the web.
+    ...(Platform.OS === 'web'
+      ? []
+      : [
+          isLocked(prefs[g.id])
+            ? { key: 'unlock', icon: 'lock-open-outline' as const, title: t('groupMenu.unlock') }
+            : { key: 'lock', icon: 'lock-closed-outline' as const, title: t('groupMenu.lock') },
+        ]),
     { key: 'bin', icon: 'trash-outline', title: t('groupMenu.bin'), danger: true },
   ];
 
@@ -143,10 +179,23 @@ export function GroupsScreen({ navigation }: TabProps<'Home'>) {
       archiveGroup(g.id);
       showUndo(t('home.archived', { name: g.name }), () => unarchiveGroup(g.id));
     } else if (key === 'unarchive') unarchiveGroup(g.id);
-    else if (key === 'bin') {
+    else if (key === 'lock') lockOne(g);
+    else if (key === 'unlock') {
+      askOwner(t('lock.promptUnlock', { name: g.name }), t('common.cancel')).then((ok) => ok && unlockGroup(g.id));
+    } else if (key === 'bin') {
       moveToBin(g.id);
       showUndo(t('bin.moved', { name: g.name }), () => restoreFromBin(g.id));
     }
+  };
+
+  // The owner confirms first, so nobody else can lock someone's group.
+  const lockOne = async (g: Group) => {
+    const support = await lockSupport();
+    if (support === 'noScreenLock') return notify(t('lock.noScreenLock.title'), t('lock.noScreenLock.body'));
+    if (support !== 'ok') return;
+    if (!(await askOwner(t('lock.promptLock', { name: g.name }), t('common.cancel')))) return;
+    lockGroup(g.id);
+    showUndo(t('lock.done', { name: g.name }), () => unlockGroup(g.id));
   };
 
   const renderList = (f: GroupFilter) => (
@@ -184,6 +233,7 @@ export function GroupsScreen({ navigation }: TabProps<'Home'>) {
         <GroupCard
           group={item}
           pref={prefs[item.id]}
+          closed={!isOpen(item.id)}
           visits={f === 'visited' ? visits[item.id]?.count : undefined}
           onPress={() => navigation.navigate('GroupDetail', { groupId: item.id })}
           onMenu={(anchor) => showMenu(item, anchor)}
@@ -192,12 +242,44 @@ export function GroupsScreen({ navigation }: TabProps<'Home'>) {
     />
   );
 
+  const hero = (
+    // Runs up under the status bar; its icons stay white on the dark top. The
+    // light hangs down to just above the search bar.
+    <HeroBackground
+      kind="pendulum"
+      reach={insets.top + spacing(2) + TOP_ROW + spacing(3) - 4}
+      style={[styles.hero, { paddingTop: insets.top + spacing(2) }]}
+    >
+      <View style={styles.heroTop}>
+        <Image source={LOGO} style={styles.logo} accessibilityIgnoresInvertColors />
+        <Text style={styles.wordmark}>Vilarci E-Split</Text>
+        <View style={styles.flex} />
+        <GlassButton icon="camera-outline" label={t('scan.title')} onPress={openScan} />
+        <GlassButton icon="settings-outline" label={t('settings.title')} onPress={() => navigation.navigate('Settings')} />
+      </View>
+      <Pressable
+        onPress={() => navigation.navigate('Search')}
+        accessibilityRole="search"
+        style={({ pressed }) => [styles.searchPill, pressed && styles.pressed]}
+      >
+        <Ionicons name="search" size={18} color={colors.primary} />
+        <Text style={styles.searchText} numberOfLines={1}>
+          {t('search.placeholder')}
+        </Text>
+        <View style={styles.searchGo}>
+          <Ionicons name="arrow-forward" size={16} color={colors.white} />
+        </View>
+      </Pressable>
+    </HeroBackground>
+  );
+
   return (
     <ScreenContainer tabs>
+      {hero}
       {groups.length ? (
         <>
           <FilterBar options={options} value={filter} onChange={setFilter} />
-          <Pager index={filterIndex} onIndexChange={onPage}>
+          <Pager index={filterIndex} onIndexChange={onPage} pullStart={pull}>
             {filters.map((f) => (
               <React.Fragment key={f.key}>{renderList(f.key)}</React.Fragment>
             ))}
@@ -226,6 +308,41 @@ export function GroupsScreen({ navigation }: TabProps<'Home'>) {
         }}
       />
     </ScreenContainer>
+  );
+}
+
+function GlassButton({ icon, label, onPress }: { icon: IconName; label: string; onPress: () => void }) {
+  const styles = useStyles();
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={6}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={({ pressed }) => [styles.glassBtn, pressed && styles.glassPressed]}
+    >
+      <Ionicons name={icon} size={19} color="#FFFFFF" />
+    </Pressable>
+  );
+}
+
+/** Up to three members' initials, overlapping, then "+N". */
+function Faces({ names }: { names: string[] }) {
+  const styles = useStyles();
+  const extra = names.length - 3;
+  return (
+    <View style={styles.faces}>
+      {names.slice(0, 3).map((n, i) => (
+        <View key={`${n}-${i}`} style={[styles.face, i > 0 && styles.faceOver]}>
+          <Avatar name={n} size={20} />
+        </View>
+      ))}
+      {extra > 0 ? (
+        <View style={[styles.face, styles.faceOver, styles.faceMore]}>
+          <Text style={styles.faceMoreText}>+{extra}</Text>
+        </View>
+      ) : null}
+    </View>
   );
 }
 
@@ -290,16 +407,19 @@ function PinSheet({ group, onClose, onPin }: { group: Group | null; onClose: () 
 interface CardProps {
   group: Group;
   pref?: GroupPref;
+  /** Locked and not unlocked: amounts stay hidden. */
+  closed: boolean;
   visits?: number;
   onPress: () => void;
   onMenu: (anchor: MenuAnchor) => void;
 }
 
-function GroupCard({ group, pref, visits, onPress, onMenu }: CardProps) {
+function GroupCard({ group, pref, closed, visits, onPress, onMenu }: CardProps) {
   const styles = useStyles();
-  const { colors } = useTheme();
+  const { colors, dark } = useTheme();
   const { t } = useI18n();
   const kind = groupKindOf(group.kind);
+  const tint = kindTint(group.kind, dark);
   const pending = useMemo(() => suggestTransfers(computeBalances(group)).length, [group]);
   const total = groupTotal(group);
   const pinned = isPinned(pref);
@@ -311,22 +431,26 @@ function GroupCard({ group, pref, visits, onPress, onMenu }: CardProps) {
       onLongPress={(e) => onMenu(pressPoint(e))}
       style={({ pressed }) => [styles.card, pinned && styles.cardPinned, pressed && styles.pressed]}
     >
-      <View style={styles.iconWrap}>
-        <Ionicons name={kind.icon} size={22} color={colors.tint} />
+      <View style={[styles.iconWrap, { backgroundColor: tint.bg }]}>
+        <Ionicons name={kind.icon} size={22} color={tint.fg} />
       </View>
       <View style={styles.cardBody}>
         <View style={styles.nameRow}>
           {pinned ? <Ionicons name="pin" size={14} color={colors.tint} /> : null}
+          {isLocked(pref) ? <Ionicons name="lock-closed" size={13} color={colors.textSecondary} /> : null}
           <Text style={styles.name} numberOfLines={1}>
             {group.name}
           </Text>
         </View>
-        <Text style={styles.meta} numberOfLines={2}>
-          {t('count.member', { count: group.members.length })} · {t('count.expense', { count: group.expenses.filter(counted).length })}
-          {visits ? ` · ${t('home.card.opened', { count: visits })}` : ''}
-        </Text>
+        <View style={styles.metaRow}>
+          {group.members.length ? <Faces names={group.members.map((m) => m.name)} /> : null}
+          <Text style={styles.meta} numberOfLines={2}>
+            {t('count.expense', { count: group.expenses.filter(counted).length })}
+            {visits ? ` · ${t('home.card.opened', { count: visits })}` : ''}
+          </Text>
+        </View>
         <View style={styles.badges}>
-          {group.expenses.length ? (
+          {group.expenses.length && !closed ? (
             <View style={[styles.badge, pending ? styles.badgePending : styles.badgeDone]}>
               <Text style={[styles.badgeText, pending ? styles.badgeTextPending : styles.badgeTextDone]}>
                 {pending ? t('home.card.toSettle', { count: pending }) : t('home.card.allSettled')}
@@ -343,8 +467,17 @@ function GroupCard({ group, pref, visits, onPress, onMenu }: CardProps) {
         </View>
       </View>
       <View style={styles.right}>
-        <Text style={styles.total}>{money(total)}</Text>
-        <Text style={styles.totalLabel}>{t('home.card.spent')}</Text>
+        {closed ? (
+          <>
+            <Ionicons name="lock-closed" size={20} color={colors.textSecondary} />
+            <Text style={styles.totalLabel}>{t('home.card.locked')}</Text>
+          </>
+        ) : (
+          <>
+            <Text style={styles.total}>{money(total)}</Text>
+            <Text style={styles.totalLabel}>{t('home.card.spent')}</Text>
+          </>
+        )}
       </View>
       <MoreButton onOpen={onMenu} hitSlop={12} style={styles.more} />
     </Pressable>
@@ -353,7 +486,54 @@ function GroupCard({ group, pref, visits, onPress, onMenu }: CardProps) {
 
 const useStyles = makeStyles((c) => ({
   loader: { marginTop: spacing(16) },
-  headerBtn: { paddingHorizontal: spacing(2) },
+  flex: { flex: 1 },
+  hero: { paddingHorizontal: spacing(4), paddingBottom: spacing(4) },
+  heroTop: { flexDirection: 'row', alignItems: 'center', gap: spacing(2), height: TOP_ROW },
+  logo: { width: 28, height: 28, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)' },
+  wordmark: { color: '#FFFFFF', fontFamily: DISPLAY_FONT, fontSize: font.lg + 1, fontWeight: '700', letterSpacing: 0.3 },
+  glassBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  glassPressed: { backgroundColor: 'rgba(255,255,255,0.24)' },
+  searchPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing(2.5),
+    marginTop: spacing(3),
+    paddingLeft: spacing(4),
+    paddingRight: spacing(1.5),
+    paddingVertical: spacing(1.5),
+    borderRadius: radii.pill,
+    backgroundColor: '#FFFFFF',
+  },
+  searchText: { flex: 1, fontSize: font.md, color: '#8A6F72' },
+  searchGo: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: c.primary,
+  },
+  pullHint: { alignItems: 'center', gap: spacing(1.5), width: 90 },
+  pullCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: c.primary,
+    borderWidth: 2,
+    borderColor: c.accent,
+  },
+  pullText: { fontSize: font.xs + 1, fontWeight: '800', color: c.tint },
   list: { paddingHorizontal: spacing(4), paddingTop: spacing(1), paddingBottom: spacing(28) },
   nag: {
     flexDirection: 'row',
@@ -377,14 +557,18 @@ const useStyles = makeStyles((c) => ({
     marginBottom: spacing(3),
     borderWidth: 1,
     borderColor: c.border,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 2,
   },
   cardPinned: { borderColor: c.primaryLight },
   pressed: { opacity: 0.85 },
   iconWrap: {
     width: 46,
     height: 46,
-    borderRadius: radii.md,
-    backgroundColor: c.surfaceAlt,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing(3),
@@ -392,7 +576,14 @@ const useStyles = makeStyles((c) => ({
   cardBody: { flex: 1 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing(1) },
   name: { flexShrink: 1, fontSize: font.lg, fontWeight: '700', color: c.textPrimary },
-  meta: { fontSize: font.sm, color: c.textSecondary, marginTop: 2 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: spacing(2), marginTop: spacing(1.5) },
+  meta: { flexShrink: 1, fontSize: font.sm, color: c.textSecondary },
+  faces: { flexDirection: 'row' },
+  // A ring in the card's colour, so the overlap reads as separate faces.
+  face: { borderRadius: 12, borderWidth: 2, borderColor: c.surface },
+  faceOver: { marginLeft: -8 },
+  faceMore: { width: 24, height: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: c.surfaceAlt },
+  faceMoreText: { fontSize: 9, fontWeight: '800', color: c.textSecondary },
   badges: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing(1.5) },
   badge: {
     alignSelf: 'flex-start',
@@ -409,7 +600,7 @@ const useStyles = makeStyles((c) => ({
   badgeTextDone: { color: c.success },
   badgeTextPin: { color: c.tint },
   right: { alignItems: 'flex-end', marginLeft: spacing(2) },
-  total: { fontSize: font.lg, fontWeight: '800', color: c.textPrimary },
+  total: { fontFamily: DISPLAY_FONT, fontSize: font.xl, color: c.textPrimary },
   totalLabel: { fontSize: font.xs, color: c.textSecondary },
   more: { paddingHorizontal: spacing(2), paddingVertical: spacing(3), marginLeft: spacing(1) },
   custom: { marginTop: spacing(4), paddingHorizontal: spacing(1) },

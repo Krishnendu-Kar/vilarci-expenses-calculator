@@ -2,22 +2,23 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } fro
 import { Platform, Pressable, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '../components/ScreenContainer';
-import { Segmented } from '../components/Segmented';
 import { Fab } from '../components/Fab';
+import { DISPLAY_FONT } from '../components/LuxeCard';
 import { ActionSheet, type SheetOption } from '../components/ActionSheet';
 import { Pager } from '../components/Pager';
-import { MonthBar } from '../components/MonthBar';
+import { PrimaryButton } from '../components/PrimaryButton';
 import { useGroup, useGroups } from '../context/GroupsContext';
+import { useLock } from '../context/LockContext';
 import { computeBalances, groupTotal, suggestTransfers } from '../lib/split';
-import { addMonths, daysIn, inMonth, isClosed, monthBalances, monthsOf, thisMonth, type Month } from '../lib/months';
+import { addMonths, filterGroup, firstMonthOf, lastPickableMonth, NO_FILTER, thisMonth, type ExpenseFilter } from '../lib/months';
 import { resolveMe } from '../lib/people';
 import { isArchived } from '../lib/groupFilters';
 import { money } from '../lib/money';
-import { monthLabel, todayISO } from '../lib/format';
+import { monthLabel } from '../lib/format';
 import { buildHtmlReport, buildTextReport } from '../lib/report';
 import { buildBackup } from '../lib/backup';
 import { fileSafe, shareMessage, sharePdf, shareTextFile } from '../lib/files';
-import { confirmAction, notify } from '../lib/confirm';
+import { notify } from '../lib/confirm';
 import { makeStyles, useTheme } from '../theme/ThemeContext';
 import { useI18n } from '../i18n/I18nContext';
 import { font, radii, spacing } from '../theme/tokens';
@@ -25,6 +26,7 @@ import { ExpensesTab } from './group/ExpensesTab';
 import { MembersTab } from './group/MembersTab';
 import { SettleTab } from './group/SettleTab';
 import { StatsTab } from './group/StatsTab';
+import { FilterSheet } from './group/FilterSheet';
 import type { ScreenProps } from '../navigation/types';
 
 type Tab = 'expenses' | 'members' | 'settle' | 'stats';
@@ -35,17 +37,33 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetail'>) {
   const group = useGroup(route.params.groupId);
-  const { recordVisit, prefs, unarchiveGroup, profile, meMap, setClosed } = useGroups();
+  const { recordVisit, prefs, unarchiveGroup, profile, meMap, upiIds } = useGroups();
   const styles = useStyles();
   const { colors } = useTheme();
   const { t } = useI18n();
   const [tab, setTab] = useState<Tab>('expenses');
   const onPage = useCallback((i: number) => setTab(TABS[i]), []);
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [monthMenu, setMonthMenu] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
-  // Hostel/flat groups show one month at a time (null = all months).
-  const [month, setMonth] = useState<Month | null>(() => thisMonth());
+  // The Expenses list and Stats follow the filter; Members and Settle are all-time.
+  // Hostel/flat groups open on this month.
+  const [filter, setFilter] = useState<ExpenseFilter>(() =>
+    group?.kind === 'hostel' ? { month: thisMonth(), categories: [] } : NO_FILTER,
+  );
+  const [filterOpen, setFilterOpen] = useState(false);
+  const { isOpen, open } = useLock();
+  const closed = !!group && !isOpen(group.id);
+  const unlock = useCallback(
+    () => open(route.params.groupId, t('lock.promptOpen', { name: group?.name ?? '' })),
+    [open, route.params.groupId, group?.name, t],
+  );
+
+  // A locked group asks right away; the button on the lock screen asks again.
+  useEffect(() => {
+    if (closed) unlock();
+    // Only when the page opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Feeds the home screen's "Most visited" filter.
   useEffect(() => {
@@ -56,7 +74,7 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
     navigation.setOptions({
       title: group?.name ?? '',
       headerRight: () =>
-        group ? (
+        group && !closed ? (
           <View style={styles.headerIcons}>
             <Pressable onPress={() => setSheetOpen(true)} hitSlop={10} accessibilityLabel={t('detail.share')}>
               <Ionicons name="share-social-outline" size={22} color={colors.white} />
@@ -71,14 +89,12 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
           </View>
         ) : null,
     });
-  }, [navigation, group, colors, styles, t]);
+  }, [navigation, group, closed, colors, styles, t]);
 
-  const monthly = group?.kind === 'hostel';
-  const shownMonth = monthly ? month : null;
-  const months = useMemo(() => (group && monthly ? monthsOf(group) : []), [group, monthly]);
-  const view = useMemo(() => (group && shownMonth ? inMonth(group, shownMonth) : group), [group, shownMonth]);
+  const view = useMemo(() => (group ? filterGroup(group, filter) : group), [group, filter]);
   const balances = useMemo(() => (group ? computeBalances(group) : []), [group]);
-  const monthRows = useMemo(() => (group && shownMonth ? monthBalances(group, shownMonth) : null), [group, shownMonth]);
+  // Stats' "who paid" reads paid/share of the filtered expenses only.
+  const viewBalances = useMemo(() => (view && view !== group ? computeBalances(view) : balances), [view, group, balances]);
   const transfers = useMemo(() => suggestTransfers(balances), [balances]);
 
   if (!group || !view) {
@@ -89,12 +105,42 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
     );
   }
 
+  if (closed) {
+    return (
+      <ScreenContainer>
+        <View style={styles.locked}>
+          <View style={styles.lockIcon}>
+            <Ionicons name="lock-closed" size={34} color={colors.tint} />
+          </View>
+          <Text style={styles.lockedTitle}>{t('lock.title')}</Text>
+          <Text style={styles.lockedBody}>{t('lock.body')}</Text>
+          <PrimaryButton label={t('lock.unlockButton')} onPress={unlock} style={styles.unlockBtn} />
+        </View>
+      </ScreenContainer>
+    );
+  }
+
   const names = Object.fromEntries(group.members.map((m) => [m.id, m.name]));
   const total = groupTotal(view);
   const meId = resolveMe(group, profile, meMap[group.id]);
   const archived = isArchived(prefs[group.id]);
-  const monthIndex = shownMonth ? months.indexOf(shownMonth) : -1;
-  const closed = !!shownMonth && isClosed(group, shownMonth);
+  const totalLabel = filter.month
+    ? t(filter.categories.length ? 'detail.spentInFiltered' : 'detail.spentIn', { month: monthLabel(filter.month) })
+    : filter.categories.length
+      ? t('detail.filteredTotal')
+      : t('detail.totalSpent');
+  // ‹ › beside the month: back to the group's first month, ahead as far as the month picker goes.
+  const month = filter.month;
+  const canBack = !!month && month > firstMonthOf(group);
+  const canAhead = !!month && month < lastPickableMonth();
+  const stepMonth = (n: number) => month && setFilter({ ...filter, month: addMonths(month, n) });
+
+  const tabLabels: { key: Tab; label: string }[] = [
+    { key: 'expenses', label: t('detail.tabExpenses') },
+    { key: 'members', label: t('detail.tabMembers') },
+    { key: 'settle', label: transfers.length ? t('detail.tabSettleCount', { count: transfers.length }) : t('detail.tabSettle') },
+    { key: 'stats', label: t('detail.tabStats') },
+  ];
 
   const shareOptions: SheetOption[] = [
     { key: 'pdf', icon: 'document-text-outline', title: t('detail.pdf'), body: t('detail.pdfBody') },
@@ -112,8 +158,10 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
     setBusy(key);
     const base = fileSafe(group.name);
     try {
-      if (key === 'pdf') await sharePdf(`${base}-expenses.pdf`, buildHtmlReport(group), closeSheet);
-      else if (key === 'text') await shareMessage(buildTextReport(group), closeSheet);
+      // Reports say where to pay you, when you're in the group and have a UPI id.
+      const pay = meId ? { memberId: meId, upiIds } : undefined;
+      if (key === 'pdf') await sharePdf(`${base}-expenses.pdf`, buildHtmlReport(group, new Date(), pay), closeSheet);
+      else if (key === 'text') await shareMessage(buildTextReport(group, pay), closeSheet);
       else await shareTextFile(`${base}.vilarci.json`, buildBackup([group]), 'application/json', closeSheet);
       setSheetOpen(false);
     } catch (e) {
@@ -123,118 +171,79 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
     }
   };
 
-  const recurringCount = group.recurring?.length ?? 0;
-  const monthOptions: SheetOption[] = [
-    ...(shownMonth
-      ? [
-          closed
-            ? {
-                key: 'reopen',
-                icon: 'lock-open-outline' as const,
-                title: t('month.reopen', { month: monthLabel(shownMonth) }),
-                body: t('month.reopenBody'),
-              }
-            : {
-                key: 'close',
-                icon: 'lock-closed-outline' as const,
-                title: t('month.close', { month: monthLabel(shownMonth) }),
-                body: t('month.closeBody', { next: monthLabel(addMonths(shownMonth, 1)) }),
-              },
-          { key: 'all', icon: 'calendar-outline' as const, title: t('month.showAll'), body: t('month.showAllBody') },
-        ]
-      : [{ key: 'current', icon: 'today-outline' as const, title: t('month.showCurrent'), body: monthLabel(thisMonth()) }]),
-    {
-      key: 'recurring',
-      icon: 'repeat-outline',
-      title: t('recurring.title'),
-      body: recurringCount ? t('recurring.count', { count: recurringCount }) : t('recurring.none'),
-    },
-  ];
-
-  const pickMonthOption = (key: string) => {
-    setMonthMenu(false);
-    if (key === 'all') setMonth(null);
-    else if (key === 'current') setMonth(thisMonth());
-    else if (key === 'recurring') navigation.navigate('Recurring', { groupId: group.id });
-    else if (key === 'close' && shownMonth) {
-      confirmAction(
-        t('month.closeConfirm', { month: monthLabel(shownMonth) }),
-        t('month.closeBody', { next: monthLabel(addMonths(shownMonth, 1)) }),
-        t('month.closeButton'),
-        () => setClosed(group.id, shownMonth, true),
-      );
-    } else if (key === 'reopen' && shownMonth) setClosed(group.id, shownMonth, false);
-  };
-
-  // A new expense from a past month's page is dated in that month.
-  const addExpense = () => {
-    const current = thisMonth();
-    const date =
-      shownMonth && shownMonth < current && !closed ? `${shownMonth}-${String(daysIn(shownMonth)).padStart(2, '0')}` : todayISO();
-    navigation.navigate('ExpenseForm', { groupId: group.id, date });
-  };
-
   return (
     <ScreenContainer>
-      <View style={styles.top}>
-        {archived ? (
-          <View style={styles.archived}>
-            <Ionicons name="archive-outline" size={16} color={colors.textSecondary} />
-            <Text style={styles.archivedText}>{t('detail.archived')}</Text>
-            <Pressable onPress={() => unarchiveGroup(group.id)} hitSlop={8}>
-              <Text style={styles.link}>{t('groupMenu.unarchive')}</Text>
-            </Pressable>
+      {/* The header colour carries on: the total, then the tabs, like the website's phone. */}
+      <View style={styles.hero}>
+        <View style={styles.total}>
+          <View style={styles.labelRow}>
+            {month ? (
+              <MonthStep icon="chevron-back" label={t('detail.prevMonth')} enabled={canBack} onPress={() => stepMonth(-1)} />
+            ) : null}
+            <Text style={styles.totalLabel} numberOfLines={1}>
+              {totalLabel}
+            </Text>
+            {month ? (
+              <MonthStep icon="chevron-forward" label={t('detail.nextMonth')} enabled={canAhead} onPress={() => stepMonth(1)} />
+            ) : null}
           </View>
-        ) : null}
-        {monthly ? (
-          <MonthBar
-            month={shownMonth}
-            closed={closed}
-            canPrev={monthIndex > 0}
-            canNext={monthIndex >= 0 && monthIndex < months.length - 1}
-            onPrev={() => setMonth(months[monthIndex - 1])}
-            onNext={() => setMonth(months[monthIndex + 1])}
-            onMenu={() => setMonthMenu(true)}
-          />
-        ) : null}
-        <View style={styles.summary}>
-          <View style={styles.summaryCol}>
-            <Text style={styles.summaryLabel}>{shownMonth ? t('detail.spentThisMonth') : t('detail.totalSpent')}</Text>
-            <Text style={styles.summaryValue}>{money(total)}</Text>
-          </View>
-          <View style={styles.divider} />
-          <View style={styles.summaryCol}>
-            <Text style={styles.summaryLabel}>{t('detail.avg')}</Text>
-            <Text style={styles.summaryValue}>{money(Math.round(total / group.members.length))}</Text>
-          </View>
+          <Text style={styles.totalValue} numberOfLines={1} adjustsFontSizeToFit>
+            {money(total)}
+          </Text>
+          <Text style={styles.totalSub} numberOfLines={1}>
+            {t('detail.perPerson', { amount: money(Math.round(total / group.members.length)) })} · {t('count.person', { count: group.members.length })}
+          </Text>
         </View>
-        <Segmented
-          options={[
-            { key: 'expenses', label: t('detail.tabExpenses') },
-            { key: 'members', label: t('detail.tabMembers') },
-            { key: 'settle', label: transfers.length ? t('detail.tabSettleCount', { count: transfers.length }) : t('detail.tabSettle') },
-            { key: 'stats', label: t('detail.tabStats') },
-          ]}
-          value={tab}
-          onChange={setTab}
-        />
+        <View style={styles.tabs} accessibilityRole="tablist">
+          {tabLabels.map(({ key, label }) => {
+            const on = tab === key;
+            return (
+              <Pressable
+                key={key}
+                onPress={() => setTab(key)}
+                style={styles.tab}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: on }}
+              >
+                <Text style={[styles.tabText, on && styles.tabTextOn]} numberOfLines={1}>
+                  {label}
+                </Text>
+                <View style={[styles.tabLine, on && styles.tabLineOn]} />
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
+      {archived ? (
+        <View style={styles.archived}>
+          <Ionicons name="archive-outline" size={16} color={colors.textSecondary} />
+          <Text style={styles.archivedText}>{t('detail.archived')}</Text>
+          <Pressable onPress={() => unarchiveGroup(group.id)} hitSlop={8}>
+            <Text style={styles.link}>{t('groupMenu.unarchive')}</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       {/* Same order as TABS. */}
       <Pager index={TABS.indexOf(tab)} onIndexChange={onPage}>
         <ExpensesTab
           group={group}
           shown={view.expenses}
-          month={shownMonth}
+          filter={filter}
+          onFilter={setFilter}
+          onOpenFilter={() => setFilterOpen(true)}
+          onRecurring={() => navigation.navigate('Recurring', { groupId: group.id })}
           names={names}
           onOpen={(e) => navigation.navigate('ExpenseForm', { groupId: group.id, expenseId: e.id })}
         />
-        <MembersTab balances={monthRows ?? balances} monthly={!!monthRows} names={names} meId={meId} />
-        <SettleTab group={group} transfers={transfers} names={names} meId={meId} month={shownMonth} onShare={() => setSheetOpen(true)} />
-        <StatsTab group={view} balances={monthRows ?? balances} names={names} />
+        <MembersTab balances={balances} names={names} meId={meId} />
+        <SettleTab group={group} transfers={transfers} names={names} meId={meId} onShare={() => setSheetOpen(true)} />
+        <StatsTab group={view} balances={viewBalances} names={names} filter={filter} onFilter={setFilter} />
       </Pager>
 
-      {tab === 'expenses' ? <Fab label={t('detail.addExpense')} onPress={addExpense} /> : null}
+      {tab === 'expenses' ? (
+        <Fab label={t('detail.addExpense')} onPress={() => navigation.navigate('ExpenseForm', { groupId: group.id })} />
+      ) : null}
 
       <ActionSheet
         visible={sheetOpen}
@@ -245,21 +254,79 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
         onPick={share}
         onClose={() => setSheetOpen(false)}
       />
-      <ActionSheet
-        visible={monthMenu}
-        title={shownMonth ? monthLabel(shownMonth) : t('month.all')}
-        options={monthOptions}
-        onPick={pickMonthOption}
-        onClose={() => setMonthMenu(false)}
-      />
+      <FilterSheet visible={filterOpen} group={group} value={filter} onApply={setFilter} onClose={() => setFilterOpen(false)} />
     </ScreenContainer>
+  );
+}
+
+/** A small glass circle on the hero that moves the month by one. */
+function MonthStep({
+  icon,
+  label,
+  enabled,
+  onPress,
+}: {
+  icon: 'chevron-back' | 'chevron-forward';
+  label: string;
+  enabled: boolean;
+  onPress: () => void;
+}) {
+  const styles = useStyles();
+  const { colors } = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={!enabled}
+      hitSlop={10}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: !enabled }}
+      style={({ pressed }) => [styles.step, !enabled && styles.stepOff, pressed && styles.stepPressed]}
+    >
+      <Ionicons name={icon} size={16} color={colors.white} />
+    </Pressable>
   );
 }
 
 const useStyles = makeStyles((c) => ({
   missing: { textAlign: 'center', marginTop: spacing(16), color: c.textSecondary },
+  locked: { alignItems: 'center', paddingTop: spacing(20), paddingHorizontal: spacing(8) },
+  lockIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: c.surfaceAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing(4),
+  },
+  lockedTitle: { fontSize: font.xl, fontWeight: '800', color: c.textPrimary, textAlign: 'center' },
+  lockedBody: { fontSize: font.md, color: c.textSecondary, textAlign: 'center', marginTop: spacing(2), lineHeight: 21 },
+  unlockBtn: { alignSelf: 'stretch', marginTop: spacing(6) },
   headerIcons: { flexDirection: 'row', gap: spacing(5), alignItems: 'center' },
-  top: { paddingHorizontal: spacing(4), paddingTop: spacing(4), paddingBottom: spacing(2) },
+  // Same colour as the header bar above it, so the two read as one piece.
+  hero: { backgroundColor: c.header, paddingHorizontal: spacing(5) },
+  total: { alignItems: 'center', paddingTop: spacing(3), paddingBottom: spacing(4) },
+  labelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing(3), alignSelf: 'stretch' },
+  totalLabel: { color: c.white, opacity: 0.75, fontSize: font.sm, letterSpacing: 0.3, flexShrink: 1 },
+  step: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.14)',
+  },
+  stepOff: { opacity: 0.35 },
+  stepPressed: { backgroundColor: 'rgba(255,255,255,0.26)' },
+  totalValue: { color: c.white, fontFamily: DISPLAY_FONT, fontSize: 40, lineHeight: 46, marginVertical: 2 },
+  totalSub: { color: c.white, opacity: 0.75, fontSize: font.sm },
+  tabs: { flexDirection: 'row', justifyContent: 'space-between' },
+  tab: { alignItems: 'center', paddingHorizontal: spacing(1) },
+  tabText: { color: c.white, opacity: 0.65, fontSize: font.md, fontWeight: '600', paddingTop: spacing(2), paddingBottom: spacing(2.5) },
+  tabTextOn: { opacity: 1 },
+  tabLine: { alignSelf: 'stretch', height: 2, backgroundColor: 'transparent' },
+  tabLineOn: { backgroundColor: c.white },
   archived: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -268,19 +335,9 @@ const useStyles = makeStyles((c) => ({
     borderRadius: radii.md,
     paddingHorizontal: spacing(3.5),
     paddingVertical: spacing(2.5),
-    marginBottom: spacing(3),
+    marginHorizontal: spacing(4),
+    marginTop: spacing(3),
   },
   archivedText: { flex: 1, fontSize: font.sm, color: c.textPrimary },
   link: { color: c.tint, fontWeight: '700', fontSize: font.sm + 1 },
-  summary: {
-    flexDirection: 'row',
-    backgroundColor: c.primary,
-    borderRadius: radii.lg,
-    paddingVertical: spacing(4),
-    marginBottom: spacing(4),
-  },
-  summaryCol: { flex: 1, alignItems: 'center', paddingHorizontal: spacing(1) },
-  summaryLabel: { color: c.onPrimary, opacity: 0.75, fontSize: font.xs + 1, fontWeight: '600', letterSpacing: 0.4, textAlign: 'center' },
-  summaryValue: { color: c.onPrimary, fontSize: font.xxl, fontWeight: '800', marginTop: 2 },
-  divider: { width: 1, backgroundColor: 'rgba(255,255,255,0.25)' },
 }));

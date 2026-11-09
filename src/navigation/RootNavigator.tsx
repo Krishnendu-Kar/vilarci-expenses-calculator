@@ -18,7 +18,9 @@ import { ExportScreen } from '../screens/ExportScreen';
 import { ImportScreen } from '../screens/ImportScreen';
 import { BinScreen } from '../screens/BinScreen';
 import { AboutScreen } from '../screens/AboutScreen';
-import { BrandTitle } from '../components/BrandTitle';
+import { AuthScreen } from '../screens/AuthScreen';
+import { SearchScreen } from '../screens/SearchScreen';
+import { ScanScreen } from '../screens/ScanScreen';
 import { useTheme } from '../theme/ThemeContext';
 import { useI18n } from '../i18n/I18nContext';
 import type { IconName } from '../data/categories';
@@ -64,13 +66,10 @@ function MainTabs() {
         ),
       })}
     >
-      <Tab.Screen
-        name="Home"
-        component={GroupsScreen}
-        options={{ title: t('tabs.home'), headerTitle: () => <BrandTitle /> }}
-      />
-      <Tab.Screen name="People" component={PeopleScreen} options={{ title: t('tabs.people') }} />
-      <Tab.Screen name="Profile" component={ProfileScreen} options={{ title: t('tabs.profile') }} />
+      {/* Every tab draws its own top (the pendulum hero, the People hero, the Profile header): no header bar. */}
+      <Tab.Screen name="Home" component={GroupsScreen} options={{ title: t('tabs.home'), headerShown: false }} />
+      <Tab.Screen name="People" component={PeopleScreen} options={{ title: t('tabs.people'), headerShown: false }} />
+      <Tab.Screen name="Profile" component={ProfileScreen} options={{ title: t('tabs.profile'), headerShown: false }} />
     </Tab.Navigator>
   );
 }
@@ -119,6 +118,10 @@ export function RootNavigator() {
         <Stack.Screen name="Import" component={ImportScreen} options={{ title: t('import.title') }} />
         <Stack.Screen name="Bin" component={BinScreen} options={{ title: t('bin.title') }} />
         <Stack.Screen name="About" component={AboutScreen} options={{ title: t('about.title') }} />
+        <Stack.Screen name="Auth" component={AuthScreen} options={{ title: t('account.signIn') }} />
+        <Stack.Screen name="Search" component={SearchScreen} options={{ headerShown: false, animation: 'fade' }} />
+        {/* From the left, like the camera in WhatsApp: it sits left of All. */}
+        <Stack.Screen name="Scan" component={ScanScreen} options={{ headerShown: false, animation: 'slide_from_left' }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

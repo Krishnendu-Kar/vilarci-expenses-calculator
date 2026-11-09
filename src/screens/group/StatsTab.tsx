@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { EmptyState } from '../../components/EmptyState';
 import { SectionLabel } from '../../components/SectionLabel';
 import { categoryTotals, counted, dailyTotals, type MemberBalance } from '../../lib/split';
+import { isFiltered, type ExpenseFilter } from '../../lib/months';
 import { money } from '../../lib/money';
 import { dayLabel } from '../../lib/format';
 import { categoryOf } from '../../data/categories';
@@ -11,18 +12,22 @@ import { makeStyles, useTheme } from '../../theme/ThemeContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { font, radii, spacing } from '../../theme/tokens';
 import { useTabStyles } from './styles';
+import { FilterChips } from './FilterChips';
 import type { Group } from '../../types';
 
 interface Props {
-  /** The group, or only one month of it for hostel groups. */
+  /** The group with only the expenses the Expenses filter lets through. */
   group: Group;
+  /** Paid and share of those expenses. */
   balances: MemberBalance[];
   names: Record<string, string>;
+  filter: ExpenseFilter;
+  onFilter: (f: ExpenseFilter) => void;
 }
 
 // Every chart here is a single series, so bars share one brand hue and the
 // label next to each bar carries identity. Values are printed, not implied.
-export function StatsTab({ group, balances, names }: Props) {
+export function StatsTab({ group, balances, names, filter, onFilter }: Props) {
   const t = useTabStyles();
   const styles = useStyles();
   const { colors } = useTheme();
@@ -34,10 +39,18 @@ export function StatsTab({ group, balances, names }: Props) {
   // Archived expenses don't count anywhere, including here.
   const live = group.expenses.filter(counted);
 
+  // The same chips as the Expenses tab, so it's clear what the numbers cover.
+  const chips = <FilterChips filter={filter} onChange={onFilter} />;
+
   if (live.length === 0) {
     return (
       <ScrollView contentContainerStyle={t.list}>
-        <EmptyState icon="stats-chart-outline" title={i18n.t('stats.empty.title')} body={i18n.t('stats.empty.body')} />
+        {chips}
+        {isFiltered(filter) ? (
+          <EmptyState icon="funnel-outline" title={i18n.t('filter.empty.title')} body={i18n.t('filter.empty.body')} />
+        ) : (
+          <EmptyState icon="stats-chart-outline" title={i18n.t('stats.empty.title')} body={i18n.t('stats.empty.body')} />
+        )}
       </ScrollView>
     );
   }
@@ -50,6 +63,7 @@ export function StatsTab({ group, balances, names }: Props) {
 
   return (
     <ScrollView contentContainerStyle={t.list}>
+      {chips}
       <View style={styles.tiles}>
         <Tile label={i18n.t('stats.biggest')} value={money(biggest.amount)} sub={biggest.title} />
         <Tile
