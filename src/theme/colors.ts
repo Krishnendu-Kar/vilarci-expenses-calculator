@@ -25,6 +25,8 @@ export const lightColors = {
   white: '#FFFFFF',
   backdrop: 'rgba(36,16,18,0.45)',
   snackbar: '#2B1A1D',
+  /** A `~Name` (an account whose name you haven't saved): amber here, yellow-white in dark. */
+  unsaved: '#9A6700',
 };
 
 export type Palette = typeof lightColors;
@@ -51,6 +53,7 @@ export const darkColors: Palette = {
   white: '#FFFFFF',
   backdrop: 'rgba(0,0,0,0.6)',
   snackbar: '#3A2C2F',
+  unsaved: '#FDF0B8',
 };
 
 // One colour per group type, for the icon tile on Home and in search:

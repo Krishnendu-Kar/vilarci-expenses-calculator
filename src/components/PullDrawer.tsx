@@ -7,12 +7,14 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { spacing } from '../theme/tokens';
 
 interface Props {
-  /** Always showing, above the drawer. */
-  head: React.ReactNode;
+  /** Always showing, above the drawer (none: only the handle shows when shut). */
+  head?: React.ReactNode;
   /** Hidden until pulled down. Mounted only while it's open or opening. */
   children: React.ReactNode;
   showLabel: string;
   hideLabel: string;
+  /** Start open (it is laid out at its own height first, so nothing jumps). */
+  initiallyOpen?: boolean;
 }
 
 const SPRING = { damping: 18, stiffness: 180, mass: 0.9 };
@@ -28,12 +30,15 @@ const GUESS_HEIGHT = 250;
  * follows the finger, then springs open or shut from how far and how fast
  * you pulled. Closed by default; nothing in it runs while it's shut.
  */
-export function PullDrawer({ head, children, showLabel, hideLabel }: Props) {
-  const open = useSharedValue(0);
+export function PullDrawer({ head, children, showLabel, hideLabel, initiallyOpen = false }: Props) {
+  const open = useSharedValue(initiallyOpen ? 1 : 0);
   const start = useSharedValue(0);
   const height = useSharedValue(GUESS_HEIGHT);
-  const [mounted, setMounted] = useState(false);
-  const [isOpen, setIsOpen] = useState(false);
+  // Open from the start: the box takes the drawer's own height until it has measured it.
+  const known = useSharedValue(initiallyOpen ? 0 : 1);
+  const [free, setFree] = useState(initiallyOpen);
+  const [mounted, setMounted] = useState(initiallyOpen);
+  const [isOpen, setIsOpen] = useState(initiallyOpen);
 
   const pan = useMemo(() => {
     const settle = (to: number) => {
@@ -71,7 +76,7 @@ export function PullDrawer({ head, children, showLabel, hideLabel }: Props) {
     });
   };
 
-  const box = useAnimatedStyle(() => ({ height: Math.max(0, open.value) * height.value }));
+  const box = useAnimatedStyle(() => (known.value ? { height: Math.max(0, open.value) * height.value } : {}));
   // Slides down from under the head and fades in as it opens.
   const inner = useAnimatedStyle(() => ({
     opacity: interpolate(open.value, [0.1, 0.7], [0, 1], 'clamp'),
@@ -85,7 +90,14 @@ export function PullDrawer({ head, children, showLabel, hideLabel }: Props) {
         {head}
         <Animated.View style={[styles.box, box]}>
           {mounted ? (
-            <Animated.View style={[styles.inner, inner]} onLayout={(e) => (height.value = e.nativeEvent.layout.height)}>
+            <Animated.View
+              style={[styles.inner, free && styles.innerFree, inner]}
+              onLayout={(e) => {
+                height.value = e.nativeEvent.layout.height;
+                known.value = 1;
+                if (free) setFree(false);
+              }}
+            >
               {children}
             </Animated.View>
           ) : null}
@@ -112,6 +124,8 @@ const styles = StyleSheet.create({
   box: { overflow: 'hidden' },
   // Laid out at its own height, whatever the box is at the moment.
   inner: { position: 'absolute', top: 0, left: 0, right: 0 },
+  // Before it has measured itself (open from the start): in the flow, so the box fits it.
+  innerFree: { position: 'relative' },
   handle: { alignSelf: 'center', alignItems: 'center', paddingTop: spacing(3), gap: 2 },
   bar: { width: 38, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.35)' },
 });

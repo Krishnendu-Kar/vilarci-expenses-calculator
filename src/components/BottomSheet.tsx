@@ -1,5 +1,5 @@
 import React from 'react';
-import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import { KeyboardAvoidingView, Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { makeStyles } from '../theme/ThemeContext';
 import { font, radii, spacing } from '../theme/tokens';
@@ -21,7 +21,8 @@ export function BottomSheet({ visible, title, onClose, children, footer, tall }:
   const styles = useStyles();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.flex} behavior="padding">
+        {/* Android draws edge to edge (Expo SDK 54+), so the window no longer shrinks for the keyboard: pad on both. */}
         <Pressable style={styles.backdrop} onPress={onClose} />
         <View style={[styles.sheet, tall && styles.tall, { paddingBottom: insets.bottom + spacing(4) }]}>
           <View style={styles.handle} />

@@ -1,7 +1,7 @@
 import type { Group, Member, Person, Profile } from '../types';
 import type { BinItem } from './bin';
 import { remapGroup } from './legacyIds';
-import { computeBalances, isSettled } from './split';
+import { computeBalances, isSettled, peopleIn } from './split';
 
 // The People directory: everyone from every group, once. A member's id is
 // their person id, so the same friend in two groups is the same person and a
@@ -17,7 +17,8 @@ export function reconcilePeople(groups: Group[], people: Person[]): { groups: Gr
   const byId = new Map(people.map((p) => [p.id, p]));
   const added: Person[] = [];
   for (const g of groups) {
-    for (const m of g.members) {
+    // A guest linked to an account is that account now: its old row doesn't bring it back.
+    for (const m of peopleIn(g)) {
       if (byId.has(m.id)) continue;
       const p = { id: m.id, name: m.name, createdAt: g.createdAt };
       byId.set(m.id, p);
@@ -27,16 +28,18 @@ export function reconcilePeople(groups: Group[], people: Person[]): { groups: Gr
   // A live group keeps the names it has: they're the group's, shared with
   // everyone in it, not this phone's nicknames.
   const synced = groups.map((g) =>
-    g.online || g.members.every((m) => byId.get(m.id)!.name === m.name)
+    g.online || g.members.every((m) => (byId.get(m.id)?.name ?? m.name) === m.name)
       ? g
-      : { ...g, members: g.members.map((m) => ({ ...m, name: byId.get(m.id)!.name })) },
+      : { ...g, members: g.members.map((m) => ({ ...m, name: byId.get(m.id)?.name ?? m.name })) },
   );
   return { groups: synced, people: added.length ? [...people, ...added] : people };
 }
 
 /**
  * Members coming from a group form or "Many at once": new ids become new
- * people, and a changed name renames that person in every group.
+ * people, and a changed name renames that person in every local group.
+ * Live groups aren't touched here: their names belong to the group (a
+ * guest is renamed in its own group by `updateGroup`, an account never).
  */
 export function applyMembers(
   groups: Group[],
@@ -53,15 +56,18 @@ export function applyMembers(
       if (!added.some((x) => x.id === m.id)) added.push({ id: m.id, name: m.name, createdAt: now });
     } else if (p.name !== m.name) {
       nextPeople = nextPeople.map((x) => (x.id === m.id ? { ...x, name: m.name } : x));
-      nextGroups = renameInGroups(nextGroups, m.id, m.name);
+      nextGroups = nextGroups.map((g) => (g.online ? g : renameInGroups([g], m.id, m.name)[0]));
     }
   }
   return { groups: nextGroups, people: added.length ? [...nextPeople, ...added] : nextPeople };
 }
 
-/** Every group that has this person in it. */
+/**
+ * Every group that has this person in it (a linked guest's old row doesn't
+ * count). Empty: they can be removed from People.
+ */
 export function groupsWith(groups: Group[], personId: string) {
-  return groups.filter((g) => g.members.some((m) => m.id === personId));
+  return groups.filter((g) => peopleIn(g).some((m) => m.id === personId));
 }
 
 /** Renames the person in every group they're in. */
@@ -74,28 +80,90 @@ export function renameInGroups(groups: Group[], personId: string, name: string):
 }
 
 /**
- * Names must differ inside a group, so a rename can't take a name someone
- * else already has in one of the person's groups. Returns that group.
- */
-export function nameTakenIn(groups: Group[], personId: string, name: string): Group | undefined {
-  const n = name.trim().toLowerCase();
-  return groupsWith(groups, personId).find((g) =>
-    g.members.some((m) => m.id !== personId && m.name.toLowerCase() === n),
-  );
-}
-
-/**
  * Who "you" are in a group: the member picked for it, else the person your
  * profile is linked to, else the one member with exactly your name.
  */
 export function resolveMe(group: Group, profile: Profile, picked?: string | null): string | null {
-  const isMember = (id?: string | null): id is string => !!id && group.members.some((m) => m.id === id);
+  // A guest linked to an account is that account now, never you.
+  const members = peopleIn(group);
+  const isMember = (id?: string | null): id is string => !!id && members.some((m) => m.id === id);
   if (isMember(picked)) return picked;
   if (isMember(profile.personId)) return profile.personId;
   const n = profile.name.trim().toLowerCase();
   if (!n) return null;
-  const same = group.members.filter((m) => m.name.toLowerCase() === n);
+  const same = members.filter((m) => m.name.toLowerCase() === n);
   return same.length === 1 ? same[0].id : null;
+}
+
+/** WhatsApp style: the mark before the name of an account you haven't saved. */
+export const UNSAVED_MARK = '~';
+
+export interface Names {
+  /** A group member, as this phone shows them. */
+  of(member: Pick<Member, 'id' | 'name'>): string;
+  /** Every member of a group: id → the name shown. */
+  all(group: Group): Record<string, string>;
+  /** Someone in the People directory, as shown. */
+  person(p: Person): string;
+  /** Someone with an account you haven't saved a name for. */
+  unsaved(id: string): boolean;
+  /** The name someone with an account gave themselves (as their live group has it). */
+  own(id: string): string | undefined;
+}
+
+/**
+ * The names this phone shows. Someone with an account shows as "~" + the
+ * name they gave themselves until you save a name for them, like an unsaved
+ * number in WhatsApp. A saved name is yours: it stays on this phone (and in
+ * your backups) and never goes to the group. Guests and you show as they
+ * are. Reports keep the group's names, since they go to other people.
+ */
+export function makeNames(groups: Group[], people: Person[], me: ReadonlySet<string>): Names {
+  const saved = new Map(people.filter((p) => p.saved).map((p) => [p.id, p.name]));
+  const own = new Map<string, string>();
+  for (const g of groups) {
+    if (!g.online) continue;
+    for (const m of g.members) if (m.account && !own.has(m.id)) own.set(m.id, m.name);
+  }
+  const unsaved = (id: string) => own.has(id) && !saved.has(id) && !me.has(id);
+  const of = (m: Pick<Member, 'id' | 'name'>) =>
+    me.has(m.id) ? m.name : (saved.get(m.id) ?? (own.has(m.id) ? UNSAVED_MARK + m.name : m.name));
+  // The same map for the same group, so screens can memoise on it.
+  const maps = new WeakMap<Group, Record<string, string>>();
+  return {
+    of,
+    all: (g) => {
+      let map = maps.get(g);
+      if (!map) maps.set(g, (map = Object.fromEntries(g.members.map((m) => [m.id, of(m)]))));
+      return map;
+    },
+    person: (p) => (unsaved(p.id) ? UNSAVED_MARK + p.name : p.name),
+    unsaved,
+    own: (id) => own.get(id),
+  };
+}
+
+/** A name saved on this phone for someone with an account (backups carry them). */
+export interface SavedName {
+  id: string;
+  name: string;
+}
+
+export const savedNames = (people: Person[]): SavedName[] =>
+  people.filter((p) => p.saved).map((p) => ({ id: p.id, name: p.name }));
+
+/**
+ * Names from a backup: a name already saved here wins, the rest are saved.
+ * Someone not on this phone yet is kept for when their group comes down.
+ */
+export function restoreSavedNames(people: Person[], names: SavedName[], now = Date.now()): Person[] {
+  if (!names.length) return people;
+  const byId = new Map(names.map((n) => [n.id, n.name]));
+  const next = people.map((p) => (!p.saved && byId.has(p.id) ? { ...p, name: byId.get(p.id)!, saved: true } : p));
+  const added = names
+    .filter((n) => !people.some((p) => p.id === n.id))
+    .map((n): Person => ({ id: n.id, name: n.name, createdAt: now, saved: true }));
+  return next.some((p, i) => p !== people[i]) || added.length ? [...next, ...added] : people;
 }
 
 export interface PeopleState {
@@ -173,7 +241,7 @@ export function netsByPerson(groups: Group[]): Map<string, GroupNet[]> {
   const out = new Map<string, GroupNet[]>();
   for (const group of groups) {
     const balances = new Map(computeBalances(group).map((b) => [b.memberId, b.net]));
-    for (const m of group.members) {
+    for (const m of peopleIn(group)) {
       const list = out.get(m.id) ?? [];
       list.push({ group, net: balances.get(m.id) ?? 0 });
       out.set(m.id, list);

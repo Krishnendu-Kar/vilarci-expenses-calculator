@@ -3,7 +3,7 @@ import { AppState } from 'react-native';
 import { useGroups } from './GroupsContext';
 import { useAuth } from './AuthContext';
 import { useUndo } from './UndoContext';
-import { finishSync, outboxCounts, pendingSync } from '../lib/storage';
+import { finishSync, loadSetting, outboxCounts, pendingSync, saveSetting } from '../lib/storage';
 import { syncNow } from '../lib/sync/engine';
 import { putOnlineData } from '../lib/sync/wire';
 import { putGroupOnline, syncApi } from '../lib/api/sync';
@@ -12,6 +12,8 @@ import type { SyncApi } from '../lib/sync/engine';
 import { forgetUpiCache } from '../lib/upiCache';
 import { DEFAULT_SETTINGS } from '../lib/permissions';
 import { resolveMe } from '../lib/people';
+import { noAnswer } from '../lib/accountRules';
+import { parseOnlineQueue } from '../lib/groupDraft';
 import { translate } from '../i18n';
 import type { Group } from '../types';
 
@@ -24,7 +26,8 @@ import type { Group } from '../types';
 
 export type SyncState = 'idle' | 'syncing' | 'failed';
 
-export type PutOnlineResult = 'online' | 'exists' | 'pickMe' | 'signIn';
+/** queued: no internet; it goes online by itself once there is. */
+export type PutOnlineResult = 'online' | 'exists' | 'pickMe' | 'signIn' | 'queued';
 
 interface SyncValue {
   state: SyncState;
@@ -36,9 +39,12 @@ interface SyncValue {
   syncNow: () => Promise<void>;
   /**
    * Puts a local group online (§8). `meId`: who you are in it, when the app
-   * can't tell (it says `pickMe`). Throws when the upload fails.
+   * can't tell (it says `pickMe`). With no internet it waits in a queue
+   * (`queued`) and goes up by itself later. Throws when the server refuses.
    */
   putOnline: (groupId: string, meId?: string) => Promise<PutOnlineResult>;
+  /** Local groups waiting for internet to go online. */
+  queued: ReadonlySet<string>;
 }
 
 const SyncContext = createContext<SyncValue | null>(null);
@@ -50,12 +56,53 @@ const POKE_MS = 400;
 
 export function SyncProvider({ children }: { children: React.ReactNode }) {
   const { user, ready: authReady } = useAuth();
-  const { groups, ready, profile, meMap, setMe, applySync, adoptAccount, markOnline, dropGroups, peekGroups, addLiveGroups } =
-    useGroups();
+  const {
+    groups,
+    ready,
+    profile,
+    meMap,
+    setMe,
+    applySync,
+    adoptAccount,
+    markOnline,
+    dropGroups,
+    peekGroups,
+    addLiveGroups,
+    giveNewId,
+  } = useGroups();
   const { showNote } = useUndo();
   const [state, setState] = useState<SyncState>('idle');
   const [lastSynced, setLastSynced] = useState<number | null>(null);
   const [waiting, setWaiting] = useState<Record<string, number>>({});
+
+  // Put online with no internet: the group waits here (saved, so it survives
+  // a restart) and goes up on the next sync that gets through.
+  const [queue, setQueue] = useState<string[]>([]);
+  const queueRef = useRef(queue);
+  queueRef.current = queue;
+  const queueLoaded = useRef(false);
+  const setQueued = useCallback((fn: (q: string[]) => string[]) => {
+    const next = fn(queueRef.current);
+    if (next === queueRef.current) return;
+    queueRef.current = next;
+    setQueue(next);
+    if (queueLoaded.current) void saveSetting('onlineQueue', next.length ? JSON.stringify(next) : null).catch(() => {});
+  }, []);
+  const enqueue = useCallback((id: string) => setQueued((q) => (q.includes(id) ? q : [...q, id])), [setQueued]);
+  const dequeue = useCallback((id: string) => setQueued((q) => (q.includes(id) ? q.filter((x) => x !== id) : q)), [setQueued]);
+  useEffect(() => {
+    loadSetting('onlineQueue')
+      .then((raw) => {
+        const saved = parseOnlineQueue(raw);
+        queueLoaded.current = true;
+        setQueued((q) => [...new Set([...saved, ...q])]);
+      })
+      .catch(() => {
+        queueLoaded.current = true;
+      });
+  }, [setQueued]);
+  // Set below; the queue is worked through at the start of every sync.
+  const putOnlineRef = useRef<(groupId: string) => Promise<PutOnlineResult>>(async () => 'signIn');
 
   const running = useRef(false);
   const again = useRef(false);
@@ -80,6 +127,36 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
+  // Groups waiting for internet go up first. Still no answer: this throws, and
+  // the sync's own retry (2 s … 5 min) tries again.
+  const putQueued = useCallback(async () => {
+    for (const id of [...queueRef.current]) {
+      const g = peekGroups().find((x) => x.id === id);
+      if (!g || g.online) {
+        dequeue(id);
+        continue;
+      }
+      try {
+        let res = await putOnlineRef.current(id);
+        if (res === 'queued') throw new Error('Still offline');
+        if (res === 'exists') {
+          // A copy of it is online already (a shared group file): this one goes up as its own group.
+          dequeue(id);
+          const moved = giveNewId(id);
+          res = moved ? await putOnlineRef.current(moved.id) : 'online';
+          if (res === 'queued') throw new Error('Still offline');
+        }
+        dequeue(id);
+        if (res === 'online') showNote(translate('online.done', { name: g.name }));
+      } catch (e) {
+        if (e instanceof Error && e.message === 'Still offline') throw e;
+        // The server said no: it stays on the phone, and Put online can try again.
+        dequeue(id);
+        showNote(translate('online.failedQueued', { name: g.name }));
+      }
+    }
+  }, [peekGroups, dequeue, giveNewId, showNote]);
+
   const run = useCallback(async () => {
     if (!canSyncRef.current) return;
     if (running.current) {
@@ -92,6 +169,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     try {
       do {
         again.current = false;
+        await putQueued();
         const out = await syncNow({ pendingSync, finishSync }, api);
         applySync(out.touched);
         if (out.refused.length) showNote(translate('sync.refused', { count: out.refused.length }));
@@ -131,7 +209,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         .then(setWaiting)
         .catch(() => {});
     }
-  }, [api, applySync, showNote, addLiveGroups]);
+  }, [api, applySync, showNote, addLiveGroups, putQueued]);
 
   // Opening the app (or signing in, or the first live group), and coming back to it.
   useEffect(() => {
@@ -216,8 +294,10 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       wasSignedIn.current = false;
       dropGroups(groups.filter((g) => g.online).map((g) => g.id));
       forgetUpiCache();
+      // Waiting groups stay local: another account mustn't put them online.
+      setQueued(() => []);
     }
-  }, [authReady, ready, user, groups, dropGroups]);
+  }, [authReady, ready, user, groups, dropGroups, setQueued]);
 
   const putOnline = useCallback(
     async (groupId: string, meId?: string): Promise<PutOnlineResult> => {
@@ -229,7 +309,16 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       // You're in it with your account id before it goes up.
       const group = adoptAccount(user.id, me).find((g) => g.id === groupId);
       if (!group?.members.some((m) => m.id === user.id)) return 'pickMe';
-      const res = await putGroupOnline(putOnlineData(group));
+      let res: Awaited<ReturnType<typeof putGroupOnline>>;
+      try {
+        res = await putGroupOnline(putOnlineData(group));
+      } catch (e) {
+        if (!noAnswer(e)) throw e;
+        enqueue(groupId);
+        // The sync's retries (2 s … 5 min) bring it up once there's internet.
+        void run();
+        return 'queued';
+      }
       if (res.status === 'exists') return 'exists';
       const liveGroup: Group = {
         ...group,
@@ -240,14 +329,17 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       };
       // One change back: its "put online" Activity line comes down with the first sync.
       await markOnline(group, liveGroup, Math.max(0, res.cursor - 1));
+      dequeue(groupId);
       return 'online';
     },
-    [user, profile, meMap, adoptAccount, markOnline, peekGroups],
+    [user, profile, meMap, adoptAccount, markOnline, peekGroups, enqueue, dequeue, run],
   );
+  putOnlineRef.current = putOnline;
+  const queued = useMemo(() => new Set(queue), [queue]);
 
   const value = useMemo(
-    () => ({ state, lastSynced, waiting, syncNow: run, putOnline }),
-    [state, lastSynced, waiting, run, putOnline],
+    () => ({ state, lastSynced, waiting, syncNow: run, putOnline, queued }),
+    [state, lastSynced, waiting, run, putOnline, queued],
   );
   return <SyncContext.Provider value={value}>{children}</SyncContext.Provider>;
 }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { KeyboardAvoidingView, Platform } from 'react-native';
+import { KeyboardAvoidingView } from 'react-native';
 import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
 import { makeStyles } from '../theme/ThemeContext';
 
@@ -13,7 +13,8 @@ export function ScreenContainer({ children, tabs }: { children: React.ReactNode;
   const styles = useStyles();
   return (
     <SafeAreaView style={styles.safe} edges={tabs ? TAB_EDGES : STACK_EDGES}>
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.flex} behavior="padding">
+        {/* Android draws edge to edge (Expo SDK 54+), so the window no longer shrinks for the keyboard: pad on both. */}
         {children}
       </KeyboardAvoidingView>
     </SafeAreaView>

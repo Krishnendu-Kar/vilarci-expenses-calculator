@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Pressable, ScrollView, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HeroBackground } from '../components/HeroBackground';
@@ -218,7 +218,8 @@ export function JoinScreen({ navigation, route }: ScreenProps<'Join'>) {
   }
 
   return (
-    <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={styles.fill} behavior="padding">
+      {/* Android draws edge to edge (Expo SDK 54+), so the window no longer shrinks for the keyboard: pad on both. */}
       {/* Home stays behind, dimmed; tapping it closes the card. */}
       <Pressable style={styles.backdrop} onPress={close} accessibilityLabel={t('common.cancel')} />
       <View style={[styles.sheet, { paddingBottom: insets.bottom + spacing(5) }]}>

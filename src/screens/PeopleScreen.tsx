@@ -30,7 +30,7 @@ const PAGES: Page[] = ['people', 'groups'];
  * each group with who you are in it and your balance there.
  */
 export function PeopleScreen({ navigation }: TabProps<'People'>) {
-  const { groups, people, profile } = useGroups();
+  const { groups, people, profile, names } = useGroups();
   const { user } = useAuth();
   // Money from locked groups stays out until they are unlocked.
   const { groups: openGroups } = useOpenGroups();
@@ -45,11 +45,24 @@ export function PeopleScreen({ navigation }: TabProps<'People'>) {
   const rows = useMemo(() => {
     // Each group worked out once, not once per person in it.
     const nets = netsByPerson(openGroups);
-    const list = people.map((p) => ({ ...p, groups: groupsWith(groups, p.id), ...totals(nets.get(p.id) ?? []) }));
+    // "~Name" for accounts you haven't saved, sorted in by the name itself.
+    const list = people.map((p) => ({ ...p, name: names.person(p), groups: groupsWith(groups, p.id), ...totals(nets.get(p.id) ?? []) }));
+    const plain = (n: string) => n.replace(/^~/, '');
     // You first, then by name.
-    return list.sort((a, b) => Number(b.id === profile.personId) - Number(a.id === profile.personId) || a.name.localeCompare(b.name));
-  }, [groups, openGroups, people, profile.personId]);
-  const shown = searchMembers(rows, query);
+    return list.sort(
+      (a, b) => Number(b.id === profile.personId) - Number(a.id === profile.personId) || plain(a.name).localeCompare(plain(b.name)),
+    );
+  }, [groups, openGroups, people, profile.personId, names]);
+  // The list is about everyone else; you're the centre of the circle above it.
+  const shown = searchMembers(
+    rows.filter((r) => r.id !== profile.personId),
+    query,
+  );
+  // Who has an account: the live groups say (a member's id is their account id there).
+  const accounts = useMemo(
+    () => new Set(groups.flatMap((g) => (g.online ? g.members.filter((m) => m.account).map((m) => m.id) : []))),
+    [groups],
+  );
 
   // You in the middle, everyone else round you; the ones with money open sit nearest.
   const { meDot, orbit } = useMemo(() => {
@@ -92,7 +105,7 @@ export function PeopleScreen({ navigation }: TabProps<'People'>) {
       {/* How many on the open tab (locked groups aren't counted). */}
       <View style={styles.countPill}>
         <Ionicons name={page === 'people' ? 'people' : 'albums'} size={13} color="#FFFFFF" />
-        <Text style={styles.countText}>{page === 'people' ? people.length : openGroups.length}</Text>
+        <Text style={styles.countText}>{page === 'people' ? people.filter((p) => p.id !== profile.personId).length : openGroups.length}</Text>
       </View>
     </View>
   );
@@ -163,7 +176,8 @@ export function PeopleScreen({ navigation }: TabProps<'People'>) {
       ListHeaderComponent={<Text style={styles.note}>{t('lock.notCounted')}</Text>}
       ListEmptyComponent={
         <View>
-          {people.length ? (
+          {/* Searching found nobody; or there's nobody but you yet. */}
+          {query.trim() ? (
             <EmptyState icon="search-outline" title={t('members.noMatch.title')} body={t('members.noMatch.body', { query: query.trim() })} />
           ) : (
             <EmptyState icon="people-outline" title={t('people.empty.title')} body={t('people.empty.body')} />
@@ -179,8 +193,8 @@ export function PeopleScreen({ navigation }: TabProps<'People'>) {
             owed={item.owed}
             owes={item.owes}
             me={me}
-            // Nobody is linked to an account yet; you are, once you sign in.
-            hasAccount={me && !!user}
+            // You, once signed in; anyone else with an account in one of your live groups.
+            hasAccount={me ? !!user : accounts.has(item.id)}
             onPress={() => navigation.navigate('Person', { personId: item.id })}
           />
         );

@@ -118,3 +118,6 @@ export type AccountBlocker = { group_id: string; name: string } & LeaveProblem;
 
 /** Groups you can't leave yet, so the account can't be deleted. Empty = free to go. */
 export const accountBlockers = () => call<AccountBlocker[]>('account_blockers', {});
+
+/** The verified email of someone in one of your live groups; null for anyone else (or unconfirmed). */
+export const memberEmail = (userId: string) => call<string | null>('member_email', { p_user: userId });

@@ -14,9 +14,9 @@ export type RootStackParamList = {
   Main: NavigatorScreenParams<TabParamList> | undefined;
   /** `kind` preselects the type for a new group. */
   GroupForm: { groupId?: string; kind?: GroupKind } | undefined;
-  GroupDetail: { groupId: string };
+  /** putOnlineAs: a group just created as Online goes up on opening, with this member as you. */
+  GroupDetail: { groupId: string; putOnlineAs?: string };
   ExpenseForm: { groupId: string; expenseId?: string; date?: string };
-  Recurring: { groupId: string };
   Person: { personId: string };
   Settings: undefined;
   Appearance: undefined;

@@ -4,6 +4,7 @@ import { ScreenContainer } from '../components/ScreenContainer';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { useGroups } from '../context/GroupsContext';
 import { buildBackup } from '../lib/backup';
+import { savedNames } from '../lib/people';
 import { shareTextFile } from '../lib/files';
 import { getLastBackup, setLastBackup } from '../lib/storage';
 import { shortDate, todayISO } from '../lib/format';
@@ -15,7 +16,7 @@ import { font, radii, spacing } from '../theme/tokens';
 const STALE_MS = 14 * 24 * 3600 * 1000;
 
 export function ExportScreen() {
-  const { groups } = useGroups();
+  const { groups, people } = useGroups();
   const styles = useStyles();
   const { t } = useI18n();
   const [lastBackup, setLast] = useState<number | null>(null);
@@ -31,7 +32,7 @@ export function ExportScreen() {
   const exportAll = async () => {
     setBusy(true);
     try {
-      await shareTextFile(`vilarci-e-split-backup-${todayISO()}.json`, buildBackup(groups), 'application/json');
+      await shareTextFile(`vilarci-e-split-backup-${todayISO()}.json`, buildBackup(groups, savedNames(people)), 'application/json');
       const now = Date.now();
       await setLastBackup(now);
       setLast(now);

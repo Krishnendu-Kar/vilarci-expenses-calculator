@@ -317,7 +317,7 @@ describe('SQLite store', () => {
     const s = reopen(db);
     await s.loadAll();
     const id = 'aaaaaaaa-0000-4000-8000-0000000000aa';
-    const p = [{ id, name: 'Krish', createdAt: 1 }];
+    const p = [{ id, name: 'Krish', createdAt: 1 }, { id: 'acc-1', name: 'Sayan', createdAt: 2, saved: true }];
     await s.savePeople(p);
     await s.savePrefs({ [id]: { pinnedAt: 1, pinUntil: 99, lockedAt: 7 } });
     await s.saveVisits({ [id]: { count: 2, last: 3 } });
@@ -359,7 +359,7 @@ describe('SQLite store', () => {
       const rows = old.raw.prepare(`SELECT * FROM ${table}`).all() as Record<string, string | number | null>[];
       for (const r of rows) {
         // Columns added after version 1; a 1.2 database doesn't have them.
-        const later = ['expenses.month', 'group_prefs.locked_at', 'members.role', 'members.account', 'members.gone'];
+        const later = ['expenses.month', 'group_prefs.locked_at', 'members.role', 'members.account', 'members.gone', 'people.saved'];
         const cols = Object.keys(r).filter((c) => !later.includes(`${table}.${c}`));
         raw.prepare(`INSERT INTO ${table} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`).run(...cols.map((c) => r[c]));
       }
@@ -389,6 +389,25 @@ PRAGMA user_version = 2;`);
     await s.loadAll();
     await s.savePrefs({ g: { lockedAt: 5 } });
     assert.deepEqual((await reopen(db).loadAll()).prefs, { g: { lockedAt: 5 } });
+  });
+
+  it('counts names renamed on this phone as saved when upgrading to version 5', async () => {
+    const { raw, db } = memoryDb();
+    raw.exec(`${MIGRATIONS.slice(0, 4).join('\n')}\nPRAGMA user_version = 4;`);
+    raw.exec(`
+      INSERT INTO settings (key, value) VALUES ('legacy_imported_at', '1');
+      INSERT INTO groups (id, name, kind, created_at, updated_at) VALUES ('g', 'Goa', 'trip', 1, 1), ('local', 'Mess', 'hostel', 1, 1);
+      INSERT INTO online_groups (group_id, cursor, role, status, edit_info, add_expenses, add_guests, require_approval)
+        VALUES ('g', 5, 'member', 'active', 'all', 'all', 'all', 0);
+      INSERT INTO members (group_id, person_id, name, pos, account) VALUES
+        ('g', 'renamed', 'Sayan Sen', 0, 1), ('g', 'same', 'Neha Das', 1, 1), ('g', 'guest', 'Rahul', 2, 0),
+        ('local', 'friend', 'Bubai', 0, 0);
+      INSERT INTO people (id, name, created_at) VALUES
+        ('renamed', 'Sayan', 1), ('same', 'Neha Das', 1), ('guest', 'Rahul Bhai', 1), ('friend', 'Bubai', 1);
+    `);
+    const all = await reopen(db).loadAll();
+    const saved = Object.fromEntries(all.people.map((p) => [p.id, !!p.saved]));
+    assert.deepEqual(saved, { renamed: true, same: false, guest: false, friend: false });
   });
 
   it('knows every AsyncStorage key older versions used', () => {

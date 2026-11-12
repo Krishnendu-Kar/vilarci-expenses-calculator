@@ -7,14 +7,14 @@ import { MoreButton, pressPoint } from '../../components/MoreButton';
 import { useGroups } from '../../context/GroupsContext';
 import { useUndo } from '../../context/UndoContext';
 import { useMenu, type MenuAnchor, type MenuItem } from '../../context/MenuContext';
-import { counted, sortExpenses } from '../../lib/split';
+import { activeIn, counted, sortExpenses } from '../../lib/split';
 import { can } from '../../lib/permissions';
 import { searchExpenses } from '../../lib/search';
 import { expenseMonth, isFiltered, NO_FILTER, type ExpenseFilter } from '../../lib/months';
 import { money } from '../../lib/money';
 import { dayLabel, monthLabel, toISODate } from '../../lib/format';
 import { loadEvents } from '../../lib/storage';
-import { describeEvent } from '../../lib/activity';
+import { describeEvent, type ActivityEvent } from '../../lib/activity';
 import { payerText, splitShort } from '../../lib/describe';
 import { categoryOf } from '../../data/categories';
 import { makeStyles, useTheme } from '../../theme/ThemeContext';
@@ -31,8 +31,6 @@ interface Props {
   filter: ExpenseFilter;
   onFilter: (f: ExpenseFilter) => void;
   onOpenFilter: () => void;
-  /** Hostel/flat groups: opens the list of repeating expenses. */
-  onRecurring: () => void;
   names: Record<string, string>;
   onOpen: (e: Expense) => void;
 }
@@ -77,7 +75,7 @@ function byDay(list: Expense[]): Section[] {
   }));
 }
 
-export function ExpensesTab({ group, shown, filter, onFilter, onOpenFilter, onRecurring, names, onOpen }: Props) {
+export function ExpensesTab({ group, shown, filter, onFilter, onOpenFilter, names, onOpen }: Props) {
   const t = useTabStyles();
   const styles = useStyles();
   const { colors } = useTheme();
@@ -91,27 +89,20 @@ export function ExpensesTab({ group, shown, filter, onFilter, onOpenFilter, onRe
   const [archivedOpen, setArchivedOpen] = useState(false);
   const searching = !!query.trim();
   const filtered = isFiltered(filter);
-  const repeats = new Set((group.recurring ?? []).map((r) => r.id));
   const hostel = group.kind === 'hostel';
-  const repeatCount = group.recurring?.length ?? 0;
   const filterCount = (filter.month ? 1 : 0) + filter.categories.length;
   const shownLive = shown.filter(counted);
   const shownTotal = shownLive.reduce((s, e) => s + e.amount, 0);
 
   // Live groups: joins and leaves from the Activity, read again after each sync.
-  const [memberEvents, setMemberEvents] = useState<{ date: string; text: string; seq: number }[]>([]);
+  // Written out with the names shown on this phone, so a saved name shows in them too.
+  const [memberEvents, setMemberEvents] = useState<ActivityEvent[]>([]);
   useEffect(() => {
     if (!group.online) return;
     let current = true;
-    const nameOf = (id: string) => group.members.find((m) => m.id === id)?.name;
     loadEvents(group.id, 500)
       .then((events) => {
-        if (!current) return;
-        setMemberEvents(
-          events
-            .filter((e) => MEMBER_EVENTS.has(e.type))
-            .map((e) => ({ date: toISODate(new Date(e.createdAt)), text: describeEvent(e, nameOf).text, seq: e.seq })),
-        );
+        if (current) setMemberEvents(events.filter((e) => MEMBER_EVENTS.has(e.type)));
       })
       .catch(() => {});
     return () => {
@@ -122,7 +113,7 @@ export function ExpensesTab({ group, shown, filter, onFilter, onOpenFilter, onRe
   const sections = useMemo((): Section[] => {
     // A search looks inside the filter, archived expenses included.
     if (searching) {
-      return byDay(searchExpenses(shown, query, names, group.members.length, (k) => categoryOf(k).label));
+      return byDay(searchExpenses(shown, query, names, activeIn(group).length, (k) => categoryOf(k).label));
     }
     const live = shown.filter(counted);
     const pinned = live.filter((e) => e.pinnedAt != null).sort((a, b) => (b.pinnedAt ?? 0) - (a.pinnedAt ?? 0));
@@ -130,9 +121,10 @@ export function ExpensesTab({ group, shown, filter, onFilter, onOpenFilter, onRe
     // Notes follow the month filter; with categories picked they'd only be noise.
     const notes = new Map<string, string[]>();
     if (!filter.categories.length) {
-      for (const n of [...memberEvents].sort((a, b) => a.seq - b.seq)) {
-        if (filter.month && n.date.slice(0, 7) !== filter.month) continue;
-        notes.set(n.date, [...(notes.get(n.date) ?? []), n.text]);
+      for (const e of [...memberEvents].sort((a, b) => a.seq - b.seq)) {
+        const date = toISODate(new Date(e.createdAt));
+        if (filter.month && date.slice(0, 7) !== filter.month) continue;
+        notes.set(date, [...(notes.get(date) ?? []), describeEvent(e, (id) => names[id]).text]);
       }
     }
     return [
@@ -234,18 +226,6 @@ export function ExpensesTab({ group, shown, filter, onFilter, onOpenFilter, onRe
                 {i18n.t('count.expense', { count: shownLive.length })} · {money(shownTotal)}
               </Text>
             ) : null}
-            {hostel ? (
-              <Pressable onPress={onRecurring} style={({ pressed }) => [styles.repeatRow, pressed && t.pressed]}>
-                <Ionicons name="repeat-outline" size={18} color={colors.tint} />
-                <View style={styles.flex}>
-                  <Text style={styles.repeatTitle}>{i18n.t('recurring.title')}</Text>
-                  <Text style={styles.repeatBody} numberOfLines={1}>
-                    {repeatCount ? i18n.t('recurring.count', { count: repeatCount }) : i18n.t('recurring.none')}
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
-              </Pressable>
-            ) : null}
           </View>
         ) : undefined
       }
@@ -306,15 +286,12 @@ export function ExpensesTab({ group, shown, filter, onFilter, onOpenFilter, onRe
                 ) : null}
               </View>
               <Text style={t.rowMeta} numberOfLines={1}>
-                {i18n.t('expenses.paidLine', { payers: payerText(item, names), split: splitShort(item, group.members.length) })}
+                {i18n.t('expenses.paidLine', { payers: payerText(item, names), split: splitShort(item, activeIn(group).length) })}
               </Text>
             </View>
             <View style={t.rowRight}>
               <Text style={[t.rowAmount, archived && styles.struck]}>{money(item.amount)}</Text>
               <View style={styles.icons}>
-                {item.recurringId && repeats.has(item.recurringId) ? (
-                  <Ionicons name="repeat" size={13} color={colors.textSecondary} />
-                ) : null}
                 {item.note ? <Ionicons name="document-text-outline" size={13} color={colors.textSecondary} /> : null}
               </View>
             </View>
@@ -344,20 +321,6 @@ const useStyles = makeStyles((c) => ({
   },
   filterBtnOn: { backgroundColor: c.primary, borderColor: c.primary },
   filterCount: { fontSize: font.sm, fontWeight: '800', color: c.onPrimary },
-  repeatRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing(3),
-    backgroundColor: c.surface,
-    borderWidth: 1,
-    borderColor: c.border,
-    borderRadius: radii.md,
-    paddingHorizontal: spacing(3.5),
-    paddingVertical: spacing(2.5),
-    marginBottom: spacing(2),
-  },
-  repeatTitle: { fontSize: font.sm + 1, fontWeight: '700', color: c.textPrimary },
-  repeatBody: { fontSize: font.sm, color: c.textSecondary, marginTop: 1 },
   clearBtn: {
     alignSelf: 'center',
     marginTop: -spacing(6),

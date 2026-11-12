@@ -27,8 +27,18 @@ import {
   type GroupPrefs,
   type Visits,
 } from '../lib/groupFilters';
-import { adoptAccountId, applyMembers, reconcilePeople, renameInGroups } from '../lib/people';
-import { applyRecurring, setRecurring, withRepeat } from '../lib/months';
+import {
+  adoptAccountId,
+  applyMembers,
+  groupsWith,
+  makeNames,
+  reconcilePeople,
+  renameInGroups,
+  restoreSavedNames,
+  type Names,
+  type SavedName,
+} from '../lib/people';
+import { dropRepeats } from '../lib/months';
 import { newId } from '../lib/id';
 import { mergeGroups } from '../lib/backup';
 import { purgeBin, type BinItem } from '../lib/bin';
@@ -36,11 +46,12 @@ import { can, type Action } from '../lib/permissions';
 import { rebase } from '../lib/sync/merge';
 import { remapGroup } from '../lib/legacyIds';
 
-/**
- * Monthly repeats come due on their own. In a live group only someone who
- * may add expenses adds them; the server would refuse them for anyone else.
- */
-const repeatsDue = (g: Group, now: Date) => (can('edit_expenses', g) ? applyRecurring(g, now) : g);
+// Monthly repeats are gone from the app: old ones are cleared wherever you may
+// edit expenses (in a live group that syncs as a delete).
+const repeatsGone = (g: Group) => (g.recurring?.length && can('edit_expenses', g) ? dropRepeats(g) : g);
+
+/** Someone with an account, in one of your live groups. */
+const isAccount = (groups: Group[], id: string) => groups.some((g) => g.online && g.members.some((m) => m.id === id && m.account));
 
 interface GroupInput {
   name: string;
@@ -63,8 +74,7 @@ interface GroupsContextValue {
   restoreFromBin: (id: string) => void;
   /** Deletes a group in the Bin for good. */
   deleteForever: (id: string) => void;
-  /** `repeat` (hostel/flat groups): the "Repeat every month" switch. */
-  saveExpense: (groupId: string, expense: Expense, opts?: { repeat?: boolean }) => void;
+  saveExpense: (groupId: string, expense: Expense) => void;
   deleteExpense: (groupId: string, expenseId: string) => void;
   pinExpense: (groupId: string, expenseId: string, pinned: boolean) => void;
   /** Archived expenses stay saved but don't count in totals or balances. */
@@ -74,14 +84,17 @@ interface GroupsContextValue {
   addPayment: (groupId: string, payment: Omit<Payment, 'id' | 'createdAt'>) => Payment;
   deletePayment: (groupId: string, paymentId: string) => void;
   restorePayment: (groupId: string, payment: Payment) => void;
-  stopRecurring: (groupId: string, recurringId: string) => void;
-  restoreRecurring: (groupId: string, recurring: Recurring) => void;
-  /** Adds imported groups; ones with the same id replace the local copy. */
-  importGroups: (incoming: Group[]) => void;
-  /** Renames the person in every group. */
+  /** Adds imported groups; ones with the same id replace the local copy. `contacts`: saved names from your backup. */
+  importGroups: (incoming: Group[], contacts?: SavedName[]) => void;
+  /** Renames the person in every group. For someone with an account, saves the name on this phone. */
   renamePerson: (personId: string, name: string) => void;
+  /** Someone with an account goes back to "~" + their own name. */
+  forgetName: (personId: string) => void;
+  /** The names this phone shows ("~Name" for accounts you haven't saved). */
+  names: Names;
   /** Only for people who aren't in any group. */
-  deletePerson: (personId: string) => void;
+  /** False when they're still in a group (nothing is removed). */
+  deletePerson: (personId: string) => boolean;
   /** How often each group was opened on this phone (for "Most visited"). */
   visits: Visits;
   recordVisit: (groupId: string) => void;
@@ -157,7 +170,7 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
         const reconciled = reconcilePeople(groups, people);
         // Groups 30 days in the Bin are deleted for good here.
         const bin = purgeBin(storedBin, now.getTime());
-        setDb({ ...reconciled, groups: reconciled.groups.map((g) => repeatsDue(g, now)), bin });
+        setDb({ ...reconciled, groups: reconciled.groups.map(repeatsGone), bin });
         setVisits(v);
         // Pins of binned groups are kept, so restoring brings them back.
         setPrefs(prunePrefs(p, [...groups, ...bin.map((b) => b.group)]));
@@ -200,14 +213,13 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
     if (canSave) saveMeMap(meMap).catch((e) => console.warn('Could not save who is me', e));
   }, [meMap, canSave]);
 
-  // Monthly repeats come due while the app sits in the background, so check
-  // again whenever it comes back.
+  // A phone on an older version can still sync a repeat in: cleared again
+  // whenever the app comes back.
   useEffect(() => {
     if (!ready) return;
     const run = () =>
       setDb((d) => {
-        const now = new Date();
-        const groups = d.groups.map((g) => repeatsDue(g, now));
+        const groups = d.groups.map(repeatsGone);
         return groups.some((g, i) => g !== d.groups[i]) ? { ...d, groups } : d;
       });
     const sub = AppState.addEventListener('change', (s) => s === 'active' && run());
@@ -250,7 +262,11 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
         const info = can('edit_info', g) ? { name: input.name, kind: input.kind } : {};
         return { ...g, ...info, members, updatedAt: Date.now() };
       });
-      return { ...d, ...applyMembers(groups, d.people, input.members) };
+      // In a live group the form holds the group's names for people with
+      // accounts: those must not overwrite the names saved on this phone.
+      const live = d.groups.find((g) => g.id === id && g.online);
+      const named = live ? input.members.filter((m) => !live.members.some((x) => x.id === m.id && x.account)) : input.members;
+      return { ...d, ...applyMembers(groups, d.people, named) };
     });
   }, []);
 
@@ -287,19 +303,10 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const saveExpense = useCallback(
-    (groupId: string, expense: Expense, opts?: { repeat?: boolean }) =>
+    (groupId: string, e: Expense) =>
       editGroup(groupId, (g) => {
-        let e = expense;
-        let next = g;
-        if (g.kind === 'hostel' && opts?.repeat !== undefined) {
-          const r = withRepeat(g, expense, opts.repeat, newId);
-          e = r.expense;
-          next = setRecurring(g, r.recurring);
-        }
-        const exists = next.expenses.some((x) => x.id === e.id);
-        next = { ...next, expenses: exists ? next.expenses.map((x) => (x.id === e.id ? e : x)) : [e, ...next.expenses] };
-        // A repeat started in an earlier month catches up straight away.
-        return repeatsDue(next, new Date());
+        const exists = g.expenses.some((x) => x.id === e.id);
+        return { ...g, expenses: exists ? g.expenses.map((x) => (x.id === e.id ? e : x)) : [e, ...g.expenses] };
       }),
     [editGroup],
   );
@@ -372,23 +379,9 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
     [editGroup],
   );
 
-  const stopRecurring = useCallback(
-    (groupId: string, recurringId: string) =>
-      editGroup(groupId, (g) => setRecurring(g, (g.recurring ?? []).filter((r) => r.id !== recurringId))),
-    [editGroup],
-  );
-
-  const restoreRecurring = useCallback(
-    (groupId: string, recurring: Recurring) =>
-      editGroup(groupId, (g) =>
-        (g.recurring ?? []).some((r) => r.id === recurring.id) ? g : setRecurring(g, [...(g.recurring ?? []), recurring]),
-      ),
-    [editGroup],
-  );
-
-  const importGroups = useCallback((incoming: Group[]) => {
+  const importGroups = useCallback((incoming: Group[], contacts: SavedName[] = []) => {
     // Names already in the directory win, so imported groups use yours.
-    setDb((d) => ({ ...d, ...reconcilePeople(mergeGroups(d.groups, incoming), d.people) }));
+    setDb((d) => ({ ...d, ...reconcilePeople(mergeGroups(d.groups, incoming), restoreSavedNames(d.people, contacts)) }));
   }, []);
 
   const renamePerson = useCallback((personId: string, name: string) => {
@@ -396,7 +389,9 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
     if (!n) return;
     setDb((d) => ({
       ...d,
-      people: d.people.map((p) => (p.id === personId ? { ...p, name: n } : p)),
+      people: d.people.map((p) =>
+        p.id !== personId ? p : { ...p, name: n, ...(isAccount(d.groups, personId) ? { saved: true } : {}) },
+      ),
       // In a live group only a guest can be renamed (by whoever may add guests);
       // people with accounts keep the name they gave themselves.
       groups: d.groups.map((g) =>
@@ -408,13 +403,29 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
     if (profileRef.current.personId === personId) setProfile((p) => ({ ...p, name: n }));
   }, []);
 
+  const forgetName = useCallback((personId: string) => {
+    setDb((d) => {
+      const own = makeNames(d.groups, [], new Set()).own(personId);
+      if (!own) return d;
+      return {
+        ...d,
+        people: d.people.map((p) => {
+          if (p.id !== personId) return p;
+          const { saved: _saved, ...rest } = p;
+          return { ...rest, name: own };
+        }),
+        groups: d.groups.map((g) => (g.online ? g : renameInGroups([g], personId, own)[0])),
+      };
+    });
+  }, []);
+
+  // The same rule as the Person page's Remove button: in no group (locked ones
+  // included; a linked guest's old row doesn't count).
   const deletePerson = useCallback((personId: string) => {
-    setDb((d) =>
-      d.groups.some((g) => g.members.some((m) => m.id === personId))
-        ? d
-        : { ...d, people: d.people.filter((p) => p.id !== personId) },
-    );
+    if (groupsWith(dbRef.current.groups, personId).length) return false;
+    setDb((d) => (groupsWith(d.groups, personId).length ? d : { ...d, people: d.people.filter((p) => p.id !== personId) }));
     if (profileRef.current.personId === personId) setProfile((p) => ({ ...p, personId: null }));
+    return true;
   }, []);
 
   const pinGroup = useCallback((groupId: string, days: number | null) => setPrefs((p) => pin(p, groupId, days)), []);
@@ -510,6 +521,11 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
 
   const peekGroups = useCallback(() => dbRef.current.groups, []);
 
+  const names = useMemo(
+    () => makeNames(db.groups, db.people, new Set([profile.personId, ...Object.values(meMap)].filter((x): x is string => !!x))),
+    [db.groups, db.people, profile.personId, meMap],
+  );
+
   const addLiveGroups = useCallback(async (groups: Group[]) => {
     if (!groups.length) return;
     // Bookmark 0: the next sync brings everything in them.
@@ -545,10 +561,10 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
       addPayment,
       deletePayment,
       restorePayment,
-      stopRecurring,
-      restoreRecurring,
       importGroups,
       renamePerson,
+      forgetName,
+      names,
       deletePerson,
       visits,
       recordVisit,
@@ -590,10 +606,10 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
       addPayment,
       deletePayment,
       restorePayment,
-      stopRecurring,
-      restoreRecurring,
       importGroups,
       renamePerson,
+      forgetName,
+      names,
       deletePerson,
       visits,
       recordVisit,

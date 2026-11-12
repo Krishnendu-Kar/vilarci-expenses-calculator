@@ -21,7 +21,7 @@ interface Props {
   owed: number;
   owes: number;
   me: boolean;
-  /** Signed in with an account (only ever you, for now). */
+  /** Has an account (you signed in, or someone with an account in a live group); else a guest. */
   hasAccount: boolean;
   onPress: () => void;
 }

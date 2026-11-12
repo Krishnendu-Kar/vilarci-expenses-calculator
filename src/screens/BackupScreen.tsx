@@ -6,6 +6,7 @@ import { PrimaryButton } from '../components/PrimaryButton';
 import { SectionLabel } from '../components/SectionLabel';
 import { Segmented } from '../components/Segmented';
 import { useGroups } from '../context/GroupsContext';
+import { savedNames } from '../lib/people';
 import { useUndo } from '../context/UndoContext';
 import { disconnectGoogle, driveAccess, driveConnectedEmail, googleAvailable } from '../lib/api/google';
 import { downloadBackup, listBackups, setRestoreFile, type DriveFile } from '../lib/drive';
@@ -27,7 +28,7 @@ const when = (ms: number) => `${shortDate(ms)}, ${new Date(ms).toLocaleTimeStrin
  * through the usual Import preview.
  */
 export function BackupScreen({ navigation }: ScreenProps<'Backup'>) {
-  const { groups } = useGroups();
+  const { groups, people } = useGroups();
   const { showNote } = useUndo();
   const styles = useStyles();
   const { colors } = useTheme();
@@ -49,7 +50,7 @@ export function BackupScreen({ navigation }: ScreenProps<'Backup'>) {
   const backUp = async () => {
     setBusy('backup');
     try {
-      const done = await backUpToDrive(groups, true);
+      const done = await backUpToDrive(groups, true, savedNames(people));
       if (!done) return;
       setLast(done);
       setEmail(driveConnectedEmail());

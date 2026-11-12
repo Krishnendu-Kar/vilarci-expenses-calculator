@@ -76,6 +76,16 @@ describe('backup files', () => {
     assert.deepEqual(parsed.groups, [g]);
     assert.equal(parsed.skipped, 0);
     assert.ok(parsed.exportedAt);
+    assert.deepEqual(parsed.contacts, []);
+    assert.ok(!buildBackup([g]).includes('contacts'), 'a shared group file carries no saved names');
+  });
+
+  it('carries the names you saved, and drops bad ones', () => {
+    const parsed = parseBackup(buildBackup([g], [{ id: 'acc-1', name: 'Sayan' }]));
+    assert.deepEqual(parsed.contacts, [{ id: 'acc-1', name: 'Sayan' }]);
+    const raw = JSON.parse(buildBackup([g]));
+    raw.contacts = [{ id: 'a', name: '  Bhai   ji ' }, { id: 'a', name: 'Dup' }, { id: 'b', name: ' ' }, { name: 'x' }, 'x'];
+    assert.deepEqual(parseBackup(JSON.stringify(raw)).contacts, [{ id: 'a', name: 'Bhai ji' }]);
   });
 
   it('explains bad files', () => {
@@ -184,5 +194,10 @@ describe('sanitizePeople', () => {
       { id: 'a', name: 'Krish', createdAt: 1 },
     ]);
     assert.deepEqual(sanitizePeople(null), []);
+    // SQLite gives the saved flag as 1/0.
+    assert.deepEqual(sanitizePeople([{ id: 'a', name: 'Sayan', createdAt: 1, saved: 1 }, { id: 'b', name: 'Neha', createdAt: 1, saved: 0 }]), [
+      { id: 'a', name: 'Sayan', createdAt: 1, saved: true },
+      { id: 'b', name: 'Neha', createdAt: 1 },
+    ]);
   });
 });

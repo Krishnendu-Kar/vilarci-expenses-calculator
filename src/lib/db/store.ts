@@ -85,6 +85,10 @@ const SETTING = {
   /** Google Drive backup: the last one ({ at, size }) and auto backup every 0 / 1 / 7 days. */
   driveLast: 'drive_last',
   driveAuto: 'drive_auto',
+  /** Local groups waiting for internet to go online (JSON list of group ids). */
+  onlineQueue: 'online_queue',
+  /** The New group form, unsaved (JSON, see lib/groupDraft). */
+  groupDraft: 'group_draft',
 } as const;
 
 /** An upload waiting in the outbox. */
@@ -118,7 +122,16 @@ export interface SyncStep {
 
 const lineKey = (table: string, groupId: string, id: string) => `${table}\n${groupId}\n${id}`;
 
-export type SettingKey = 'theme' | 'language' | 'activitySeen' | 'upiCache' | 'welcomeSeen' | 'driveLast' | 'driveAuto';
+export type SettingKey =
+  | 'theme'
+  | 'language'
+  | 'activitySeen'
+  | 'upiCache'
+  | 'welcomeSeen'
+  | 'driveLast'
+  | 'driveAuto'
+  | 'onlineQueue'
+  | 'groupDraft';
 
 const parseJson = (raw: string | null | undefined): unknown => {
   if (!raw) return null;
@@ -292,7 +305,9 @@ export function createStore(
       serial(async (db): Promise<Everything> => {
         const saved = await readGroups(db);
         savedGroups = toMap(saved);
-        const people = sanitizePeople(await db.all('SELECT id, name, created_at AS createdAt FROM people ORDER BY created_at, rowid'));
+        const people = sanitizePeople(
+          await db.all('SELECT id, name, created_at AS createdAt, saved FROM people ORDER BY created_at, rowid'),
+        );
         savedPeople = new Map(people.map((p) => [p.id, p]));
         const prefRows = await db.all<{
           group_id: string;
@@ -517,7 +532,10 @@ export function createStore(
         if (changed.length || gone.length) {
           await db.transaction(async () => {
             for (const id of gone) await db.run('DELETE FROM people WHERE id = ?', [id]);
-            await runAll(db, insertRows('people', ['id', 'name', 'created_at'], changed.map((p) => [p.id, p.name, p.createdAt])));
+            await runAll(
+              db,
+              insertRows('people', ['id', 'name', 'created_at', 'saved'], changed.map((p) => [p.id, p.name, p.createdAt, p.saved ? 1 : 0])),
+            );
           });
         }
         savedPeople = new Map(people.map((p) => [p.id, p]));
@@ -536,7 +554,8 @@ export function createStore(
     saveUpiIds: (ids: UpiId[]) => serial((db) => setSetting(db, SETTING.upiIds, ids.length ? JSON.stringify(ids) : null)),
 
     loadSetting: (key: SettingKey) => serial((db) => getSetting(db, SETTING[key])),
-    saveSetting: (key: SettingKey, value: string) => serial((db) => setSetting(db, SETTING[key], value)),
+    /** null removes it. */
+    saveSetting: (key: SettingKey, value: string | null) => serial((db) => setSetting(db, SETTING[key], value)),
     getLastBackup: () =>
       serial(async (db) => {
         const v = Number(await getSetting(db, SETTING.lastBackup));

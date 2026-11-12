@@ -13,6 +13,7 @@ import { LockProvider } from './src/context/LockContext';
 import { AuthProvider } from './src/context/AuthContext';
 import { SyncProvider } from './src/context/SyncContext';
 import { RootNavigator } from './src/navigation/RootNavigator';
+import { NetBannerLayout } from './src/components/NetBanner';
 
 export default function App() {
   return (
@@ -31,7 +32,10 @@ export default function App() {
                           <MenuProvider>
                             {/* The header bar is dark in both themes. */}
                             <StatusBar style="light" />
-                            <RootNavigator />
+                            {/* "No internet" / "Slow internet" at the very bottom, under the tab bar. */}
+                            <NetBannerLayout>
+                              <RootNavigator />
+                            </NetBannerLayout>
                           </MenuProvider>
                         </SyncProvider>
                       </UndoProvider>

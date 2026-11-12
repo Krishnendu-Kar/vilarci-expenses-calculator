@@ -15,7 +15,7 @@ import { useAuth } from '../context/AuthContext';
 import { useOpenGroups } from '../context/LockContext';
 import { UpiSection } from './profile/UpiSection';
 import { SignInRow } from './profile/AccountSection';
-import { myNets, nameTakenIn, totals } from '../lib/people';
+import { myNets, totals } from '../lib/people';
 import { money } from '../lib/money';
 import { initials } from '../lib/format';
 import { makeStyles, useTheme } from '../theme/ThemeContext';
@@ -54,10 +54,6 @@ export function ProfileScreen({ navigation }: TabProps<'Profile'>) {
 
   const saveName = () => {
     const n = name.trim().replace(/\s+/g, ' ');
-    if (profile.personId && n) {
-      const clash = nameTakenIn(groups, profile.personId, n);
-      if (clash) return setError(t('groupForm.errNameTaken', { name: n, group: clash.name }));
-    }
     setProfileName(n);
     setEditing(false);
   };

@@ -11,7 +11,6 @@ import { ProfileScreen } from '../screens/ProfileScreen';
 import { GroupFormScreen } from '../screens/GroupFormScreen';
 import { GroupDetailScreen } from '../screens/GroupDetailScreen';
 import { ExpenseFormScreen } from '../screens/ExpenseFormScreen';
-import { RecurringScreen } from '../screens/RecurringScreen';
 import { PersonScreen } from '../screens/PersonScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { AppearanceScreen } from '../screens/AppearanceScreen';
@@ -135,7 +134,6 @@ export function RootNavigator() {
           component={ExpenseFormScreen}
           options={({ route }) => ({ title: route.params.expenseId ? t('expense.editTitle') : t('expense.addTitle') })}
         />
-        <Stack.Screen name="Recurring" component={RecurringScreen} options={{ title: t('recurring.title') }} />
         <Stack.Screen name="Person" component={PersonScreen} options={{ title: '' }} />
         <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: t('settings.title') }} />
         <Stack.Screen name="Appearance" component={AppearanceScreen} options={{ title: t('appearance.title') }} />

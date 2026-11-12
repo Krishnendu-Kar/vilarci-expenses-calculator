@@ -87,7 +87,8 @@ export function SettleTab({ group, transfers, names, meId, onShare }: Props) {
   const pay = async (tr: Transfer, upi: UpiId) => {
     const url = upiPayUrl({
       vpa: upi.vpa,
-      name: names[tr.to],
+      // The UPI app shows the payee as they named themselves, not your saved name.
+      name: group.members.find((m) => m.id === tr.to)?.name ?? names[tr.to],
       amount: tr.amount,
       note: group.name,
     });

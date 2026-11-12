@@ -197,4 +197,19 @@ CREATE TABLE events (
 ) STRICT;
 `;
 
-export const MIGRATIONS: string[] = [V1, V2, V3, V4];
+// 2.1: names you saved for people with accounts (WhatsApp style; this phone
+// only). Someone whose name here differs from every name their live groups
+// have for them was renamed on this phone before: that name counts as saved.
+const V5 = `
+ALTER TABLE people ADD COLUMN saved INTEGER NOT NULL DEFAULT 0;
+
+UPDATE people SET saved = 1
+WHERE id IN (
+  SELECT m.person_id FROM members m JOIN online_groups o ON o.group_id = m.group_id WHERE m.account = 1
+)
+AND name NOT IN (
+  SELECT m.name FROM members m JOIN online_groups o ON o.group_id = m.group_id WHERE m.person_id = people.id
+);
+`;
+
+export const MIGRATIONS: string[] = [V1, V2, V3, V4, V5];

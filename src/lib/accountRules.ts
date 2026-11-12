@@ -28,14 +28,17 @@ export const cleanCode = (s: string) => s.replace(/[\s-]/g, '');
 /** Codes are 6 to 10 digits (Supabase's email OTP length setting). */
 export const isCode = (s: string) => /^\d{6,10}$/.test(cleanCode(s));
 
+/** No answer from the server at all: offline, or the request never got out. */
+export function noAnswer(e: unknown): boolean {
+  const err = (e ?? {}) as { name?: unknown; message?: unknown };
+  const message = typeof err.message === 'string' ? err.message : '';
+  return err.name === 'AuthRetryableFetchError' || /network request failed|failed to fetch|load failed/i.test(message);
+}
+
 /** The message to show for anything a sign-in, sign-up or reset threw. */
 export function authErrorKey(e: unknown): Key {
-  const err = (e ?? {}) as { code?: unknown; name?: unknown; message?: unknown; status?: unknown };
+  const err = (e ?? {}) as { code?: unknown };
   if (typeof err.code === 'string' && CODES[err.code]) return CODES[err.code];
-  // No answer from the server at all: offline, or the request never got out.
-  const message = typeof err.message === 'string' ? err.message : '';
-  if (err.name === 'AuthRetryableFetchError' || /network request failed|failed to fetch|load failed/i.test(message)) {
-    return 'account.err.offline';
-  }
+  if (noAnswer(e)) return 'account.err.offline';
   return 'account.err.generic';
 }

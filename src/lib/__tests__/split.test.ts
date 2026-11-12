@@ -10,6 +10,8 @@ import {
   groupTotal,
   expenseShares,
   memberIsInvolved,
+  activeIn,
+  peopleIn,
   suggestTransfers,
 } from '../split';
 import { expense, group } from './fixtures';
@@ -174,5 +176,34 @@ describe('archived expenses', () => {
     assert.equal(counted(old), false);
     // The archived expense still holds B in the group.
     assert.equal(memberIsInvolved(group(['A', 'B'], [{ ...old, splitAmong: ['A', 'B'] }]), 'B'), true);
+  });
+});
+
+describe('a guest linked to an account', () => {
+  // Live group: D was a guest, now linked into C (the server moved D's money to C). E left.
+  const linked = () => {
+    const g = group(['A', 'B', 'C', 'D', 'E'], [expense('rent', 400, 'A', ['A', 'B', 'C', 'E'])]);
+    g.members = g.members.map((m) => (m.id === 'D' ? { ...m, gone: 'merged' as const } : m.id === 'E' ? { ...m, gone: 'left' as const } : m));
+    return g;
+  };
+
+  it("isn't counted as one more person", () => {
+    assert.deepEqual(peopleIn(linked()).map((m) => m.id), ['A', 'B', 'C', 'E']);
+  });
+
+  it("can't be in a new expense, and neither can someone who left", () => {
+    assert.deepEqual(activeIn(linked()).map((m) => m.id), ['A', 'B', 'C']);
+  });
+
+  it('has no balance row once its money moved', () => {
+    assert.deepEqual(computeBalances(linked()).map((b) => b.memberId), ['A', 'B', 'C', 'E']);
+  });
+
+  it('keeps its row while it still holds money (not synced yet), so nothing goes missing', () => {
+    const g = linked();
+    g.expenses.push(expense('tea', 50, 'D', ['A', 'D']));
+    const rows = computeBalances(g);
+    assert.ok(rows.some((b) => b.memberId === 'D'));
+    assert.equal(rows.reduce((s, b) => s + b.net, 0), 0);
   });
 });

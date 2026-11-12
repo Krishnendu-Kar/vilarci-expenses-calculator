@@ -1,14 +1,26 @@
 import type { Group } from '../types';
 import { SCHEMA_VERSION, localCopy, sanitizeGroups, type SanitizeResult } from './migrate';
+import type { SavedName } from './people';
 import { translate } from '../i18n';
 
 // Backup files are plain JSON so they survive WhatsApp, Drive and email.
 // The same format carries a full backup or a single shared group.
 export const BACKUP_APP = 'vilarci-split';
 
-export function buildBackup(groups: Group[]) {
+/**
+ * `contacts`: the names you saved for people with accounts. Only your own
+ * backups carry them (Export, Drive), never a group file shared with others.
+ * Older versions ignore the field.
+ */
+export function buildBackup(groups: Group[], contacts: SavedName[] = []) {
   return JSON.stringify(
-    { app: BACKUP_APP, version: SCHEMA_VERSION, exportedAt: new Date().toISOString(), groups },
+    {
+      app: BACKUP_APP,
+      version: SCHEMA_VERSION,
+      exportedAt: new Date().toISOString(),
+      groups,
+      ...(contacts.length ? { contacts } : {}),
+    },
     null,
     2,
   );
@@ -16,6 +28,19 @@ export function buildBackup(groups: Group[]) {
 
 export interface ParsedBackup extends SanitizeResult {
   exportedAt?: string;
+  contacts: SavedName[];
+}
+
+/** Saved names from a file; anything malformed is dropped. */
+export function sanitizeContacts(raw: unknown): SavedName[] {
+  if (!Array.isArray(raw)) return [];
+  const out: SavedName[] = [];
+  for (const c of raw) {
+    const r = (typeof c === 'object' && c !== null ? c : {}) as { id?: unknown; name?: unknown };
+    const name = typeof r.name === 'string' ? r.name.trim().replace(/\s+/g, ' ').slice(0, 30) : '';
+    if (typeof r.id === 'string' && r.id && name && !out.some((x) => x.id === r.id)) out.push({ id: r.id, name });
+  }
+  return out;
 }
 
 /** Throws an Error with a message fit to show the user. */
@@ -26,7 +51,7 @@ export function parseBackup(text: string): ParsedBackup {
   } catch {
     throw new Error(translate('backup.unreadable'));
   }
-  const d = data as { app?: unknown; version?: unknown; exportedAt?: unknown; groups?: unknown };
+  const d = data as { app?: unknown; version?: unknown; exportedAt?: unknown; groups?: unknown; contacts?: unknown };
   if (!d || d.app !== BACKUP_APP || !Array.isArray(d.groups)) {
     throw new Error(translate('backup.notOurs'));
   }
@@ -40,6 +65,7 @@ export function parseBackup(text: string): ParsedBackup {
     ...result,
     groups: result.groups.map(localCopy),
     exportedAt: typeof d.exportedAt === 'string' ? d.exportedAt : undefined,
+    contacts: sanitizeContacts(d.contacts),
   };
 }
 

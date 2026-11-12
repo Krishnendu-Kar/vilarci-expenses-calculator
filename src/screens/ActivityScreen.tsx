@@ -3,7 +3,7 @@ import { SectionList, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { EmptyState } from '../components/EmptyState';
-import { useGroup } from '../context/GroupsContext';
+import { useGroup, useGroups } from '../context/GroupsContext';
 import { useSync } from '../context/SyncContext';
 import { loadEvents } from '../lib/storage';
 import { markActivitySeen } from './group/activitySeen';
@@ -22,6 +22,7 @@ import type { ScreenProps } from '../navigation/types';
  */
 export function ActivityScreen({ route }: ScreenProps<'Activity'>) {
   const group = useGroup(route.params.groupId);
+  const { names: shown } = useGroups();
   const { syncNow } = useSync();
   const styles = useStyles();
   const { colors } = useTheme();
@@ -44,18 +45,18 @@ export function ActivityScreen({ route }: ScreenProps<'Activity'>) {
 
   const sections = useMemo(() => {
     if (!group || !events) return [];
-    const names = new Map(group.members.map((m) => [m.id, m.name]));
+    const names = shown.all(group);
     const byDay = new Map<string, { e: ActivityEvent; line: ReturnType<typeof describeEvent> }[]>();
     for (const e of events) {
       const day = toISODate(new Date(e.createdAt));
       const list = byDay.get(day) ?? [];
-      list.push({ e, line: describeEvent(e, (id) => names.get(id)) });
+      list.push({ e, line: describeEvent(e, (id) => names[id]) });
       byDay.set(day, list);
     }
     return [...byDay].map(([day, data]) => ({ title: dayLabel(day), data }));
     // Language changes the words.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [group, events, lang]);
+  }, [group, events, lang, shown]);
 
   const time = (ms: number) => new Date(ms).toLocaleTimeString(dateLocale(), { hour: 'numeric', minute: '2-digit' });
 

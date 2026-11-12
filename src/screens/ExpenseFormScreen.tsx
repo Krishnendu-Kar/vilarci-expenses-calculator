@@ -46,13 +46,18 @@ const bpToInput = (bp: number) => paiseToInput(bp);
 export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseForm'>) {
   const { groupId, expenseId } = route.params;
   const group = useGroup(groupId);
-  const { saveExpense, deleteExpense } = useGroups();
+  const { saveExpense, deleteExpense, names } = useGroups();
   const { showUndo } = useUndo();
   const styles = useStyles();
   const { colors, dark } = useTheme();
   const { t } = useI18n();
   const existing = group?.expenses.find((e) => e.id === expenseId);
-  const members = group?.members ?? [];
+  // Names as this phone shows them ("~Name" for accounts you haven't saved); only for show.
+  // Only people still in the group, plus anyone gone who is already in this expense.
+  const members = useMemo(() => {
+    const inIt = new Set(existing ? [...Object.keys(existing.payers), ...existing.splitAmong] : []);
+    return (group?.members ?? []).filter((m) => !m.gone || inIt.has(m.id)).map((m) => ({ ...m, name: names.of(m) }));
+  }, [group?.members, existing, names]);
   const allIds = members.map((m) => m.id);
   const hostel = group?.kind === 'hostel';
 
@@ -85,10 +90,6 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
     }
     return v;
   });
-  // Hostel/flat groups: on when this expense's monthly repeat is still running.
-  const [repeat, setRepeat] = useState(
-    () => !!existing?.recurringId && !!group?.recurring?.some((r) => r.id === existing.recurringId),
-  );
   const [error, setError] = useState<string | null>(null);
 
   // ---- "Paste from chat", and drafts (new expenses only) ----
@@ -107,8 +108,8 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
   const finished = useRef(false);
 
   const oneForm: OneForm = useMemo(
-    () => ({ title, amountText, category, date, month: monthPick, note, multiPay, payer, payerTexts, mode, selected, values, repeat }),
-    [title, amountText, category, date, monthPick, note, multiPay, payer, payerTexts, mode, selected, values, repeat],
+    () => ({ title, amountText, category, date, month: monthPick, note, multiPay, payer, payerTexts, mode, selected, values }),
+    [title, amountText, category, date, monthPick, note, multiPay, payer, payerTexts, mode, selected, values],
   );
   // Editing: "Update changes" only lights up once something changed.
   const initialForm = useRef(JSON.stringify(oneForm));
@@ -128,7 +129,6 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
     setMode(f.mode);
     setSelected(f.selected.filter((id) => ids.has(id)));
     setValues(f.values);
-    setRepeat(!!f.repeat && hostel);
   };
 
   useEffect(() => {
@@ -212,7 +212,6 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
       mode: 'equal',
       selected: allIds,
       values: { exact: {}, shares: {}, percent: {} },
-      repeat: false,
     });
     many.current = undefined;
     setManyInitial(undefined);
@@ -357,7 +356,6 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
         ...(existing?.archivedAt != null ? { archivedAt: existing.archivedAt } : {}),
         createdAt: existing?.createdAt ?? Date.now(),
       },
-      hostel ? { repeat } : undefined,
     );
     finish();
   };
@@ -375,7 +373,6 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
   const uneven = !!amount && splitAmong.length > 0 && amount % splitAmong.length !== 0;
   // Exactly what each person is charged, the same way the balances work it out.
   const equalShares = amount && splitAmong.length ? allocate(amount, splitAmong.map((id) => [id, 1])) : {};
-  const repeatDay = Number(date.slice(8, 10));
   const showForm = !(isNew && chat);
 
   return (
@@ -643,27 +640,6 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
                 </SwipeView>
               </FormSection>
 
-              {hostel ? (
-                <View style={styles.repeatRow}>
-                  <View style={styles.repeatIcon}>
-                    <Ionicons name="repeat" size={18} color={colors.tint} />
-                  </View>
-                  <View style={styles.flex}>
-                    <Text style={styles.repeatTitle}>{t('expense.repeat')}</Text>
-                    <Text style={styles.repeatHint}>
-                      {repeat && existing?.recurringId ? t('expense.repeatEditHint') : t('expense.repeatHint', { day: repeatDay })}
-                    </Text>
-                  </View>
-                  <Switch
-                    value={repeat}
-                    onValueChange={setRepeat}
-                    trackColor={{ false: colors.border, true: colors.primaryLight }}
-                    thumbColor={repeat ? colors.primary : colors.surface}
-                    ios_backgroundColor={colors.border}
-                  />
-                </View>
-              ) : null}
-
               {error ? (
                 <View style={styles.error}>
                   <Ionicons name="alert-circle" size={18} color={colors.danger} />
@@ -869,27 +845,6 @@ const useStyles = makeStyles((c) => ({
   ok: { color: c.success },
   bad: { color: c.danger },
   muted: { color: c.textSecondary },
-  repeatRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing(3),
-    backgroundColor: c.surface,
-    borderRadius: radii.lg,
-    borderWidth: 1,
-    borderColor: c.border,
-    padding: spacing(4),
-    marginBottom: spacing(4),
-  },
-  repeatIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: c.surfaceAlt,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  repeatTitle: { fontSize: font.md, fontWeight: '700', color: c.textPrimary },
-  repeatHint: { fontSize: font.sm, color: c.textSecondary, marginTop: 2 },
   error: {
     flexDirection: 'row',
     alignItems: 'center',

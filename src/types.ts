@@ -50,6 +50,11 @@ export interface Person {
   id: string;
   name: string;
   createdAt: number;
+  /**
+   * Someone with an account you gave a name to, like saving a number in
+   * WhatsApp. Until then a live group shows them as "~" + their own name.
+   */
+  saved?: boolean;
 }
 
 /** A UPI id ("VPA", name@bank) you get paid on, with an optional label like "GPay". */

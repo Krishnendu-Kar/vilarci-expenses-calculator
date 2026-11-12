@@ -5,10 +5,11 @@ import { ScreenContainer } from '../components/ScreenContainer';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { useGroups } from '../context/GroupsContext';
 import { parseBackup, planImport, type ImportPlan } from '../lib/backup';
+import type { SavedName } from '../lib/people';
 import { adoptIds } from '../lib/storage';
 import { pickTextFile } from '../lib/files';
 import { takeRestoreFile } from '../lib/drive';
-import { groupTotal } from '../lib/split';
+import { groupTotal, peopleIn } from '../lib/split';
 import { money } from '../lib/money';
 import { shortDate } from '../lib/format';
 import { notify } from '../lib/confirm';
@@ -23,6 +24,8 @@ interface Pending {
   exportedAt?: string;
   groups: Group[];
   skipped: number;
+  /** Names you saved for people with accounts (your own backups only). */
+  contacts: SavedName[];
   plan: ImportPlan;
 }
 
@@ -64,7 +67,7 @@ export function ImportScreen({ navigation }: ScreenProps<'Import'>) {
 
   const confirmImport = () => {
     if (!pending) return;
-    importGroups(pending.groups);
+    importGroups(pending.groups, pending.contacts);
     setDone(t('import.done', { count: pending.groups.length }));
     setPending(null);
   };
@@ -142,7 +145,7 @@ function PreviewRow({
         </View>
       </View>
       <Text style={styles.meta}>
-        {t('count.person', { count: group.members.length })} · {t('count.expense', { count: group.expenses.length })} ·{' '}
+        {t('count.person', { count: peopleIn(group).length })} · {t('count.expense', { count: group.expenses.length })} ·{' '}
         {money(groupTotal(group))}
       </Text>
       {warning ? <Text style={styles.rowWarning}>{warning}</Text> : null}

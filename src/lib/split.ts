@@ -1,4 +1,19 @@
-import type { CategoryKey, Expense, Group } from '../types';
+import type { CategoryKey, Expense, Group, Member } from '../types';
+
+/**
+ * The group's people, for counts and the average: a guest linked to an
+ * account is that account now, so the guest's old row doesn't count twice.
+ * People who left still count (their expenses stay).
+ */
+export const peopleIn = (g: Pick<Group, 'members'>): Member[] => g.members.filter((m) => m.gone !== 'merged');
+
+/**
+ * Who a new expense can be paid by or split with: no one who left, was
+ * removed, or was linked to an account (the server would fold a linked
+ * guest's share into that account's, charging them twice). "With everyone"
+ * means all of these.
+ */
+export const activeIn = (g: Pick<Group, 'members'>): Member[] => g.members.filter((m) => !m.gone);
 
 /**
  * Split `amount` paise in proportion to `weights`, using largest remainders so
@@ -86,7 +101,9 @@ export function computeBalances(group: Group): MemberBalance[] {
     if (to) to.received += p.amount;
   }
   for (const b of map.values()) b.net = b.paid - b.share + b.sent - b.received;
-  return [...map.values()];
+  // A linked guest's money moves to the account (on the server); its empty row is left out.
+  const merged = new Set(group.members.filter((m) => m.gone === 'merged').map((m) => m.id));
+  return [...map.values()].filter((b) => !merged.has(b.memberId) || b.paid || b.share || b.sent || b.received);
 }
 
 /**

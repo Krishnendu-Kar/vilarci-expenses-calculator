@@ -18,13 +18,14 @@ import { useGroups } from '../context/GroupsContext';
 import { useUndo } from '../context/UndoContext';
 import { useMenu, type MenuAnchor, type MenuItem } from '../context/MenuContext';
 import { useLock } from '../context/LockContext';
-import { useAuth } from '../context/AuthContext';
 import { useSync } from '../context/SyncContext';
 import { getLastBackup, loadSetting } from '../lib/storage';
 import { autoBackupIfDue } from '../lib/autoBackup';
+import { usePutOnline } from './group/usePutOnline';
+import { savedNames } from '../lib/people';
 import { askOwner, lockSupport } from '../lib/deviceLock';
-import { confirmAction, notify } from '../lib/confirm';
-import { computeBalances, counted, groupTotal, suggestTransfers } from '../lib/split';
+import { notify } from '../lib/confirm';
+import { computeBalances, counted, groupTotal, peopleIn, suggestTransfers } from '../lib/split';
 import { money } from '../lib/money';
 import { groupKindOf, type IconName } from '../data/categories';
 import { filterGroups, isArchived, isLocked, isPinned, pinDaysLeft, type GroupFilter, type GroupPref } from '../lib/groupFilters';
@@ -64,6 +65,7 @@ const FILTER_EMPTY: Record<Exclude<GroupFilter, 'all'>, { icon: IconName; title:
 export function GroupsScreen({ navigation }: TabProps<'Home'>) {
   const {
     groups,
+    people,
     ready,
     visits,
     prefs,
@@ -75,14 +77,12 @@ export function GroupsScreen({ navigation }: TabProps<'Home'>) {
     unlockGroup,
     moveToBin,
     restoreFromBin,
-    giveNewId,
   } = useGroups();
   const insets = useSafeAreaInsets();
   const { isOpen, openAll } = useLock();
-  const { showUndo, showNote } = useUndo();
-  const { user } = useAuth();
-  const { putOnline, syncNow } = useSync();
-  const [pickMeFor, setPickMeFor] = useState<Group | null>(null);
+  const { showUndo } = useUndo();
+  const { syncNow } = useSync();
+  const online = usePutOnline();
   const { openMenu } = useMenu();
   const styles = useStyles();
   const { colors } = useTheme();
@@ -93,9 +93,12 @@ export function GroupsScreen({ navigation }: TabProps<'Home'>) {
   // Opening the app (and coming back to it): a Drive backup, if auto backup is on and one is due.
   const groupsRef = React.useRef(groups);
   groupsRef.current = groups;
+  const peopleRef = React.useRef(people);
+  peopleRef.current = people;
   useEffect(() => {
-    const t = setTimeout(() => void autoBackupIfDue(groupsRef.current), 5000);
-    const sub = AppState.addEventListener('change', (s) => s === 'active' && void autoBackupIfDue(groupsRef.current));
+    const backUp = () => void autoBackupIfDue(groupsRef.current, savedNames(peopleRef.current));
+    const t = setTimeout(backUp, 5000);
+    const sub = AppState.addEventListener('change', (s) => s === 'active' && backUp());
     return () => {
       clearTimeout(t);
       sub.remove();
@@ -243,35 +246,7 @@ export function GroupsScreen({ navigation }: TabProps<'Home'>) {
       }
       moveToBin(g.id);
       showUndo(t('bin.moved', { name: g.name }), () => restoreFromBin(g.id));
-    } else if (key === 'online') goOnline(g);
-  };
-
-  // Put online (onlinedb.md §8): signed in, said yes, and the app knows which member is you.
-  const goOnline = (g: Group) => {
-    if (!user) {
-      notify(t('online.signInTitle'), t('online.signInBody'));
-      navigation.navigate('Auth', { mode: 'signIn' });
-      return;
-    }
-    confirmAction(t('online.confirmTitle', { name: g.name }), t('online.confirmBody'), t('online.confirmButton'), () => void upload(g));
-  };
-
-  const upload = async (g: Group, meId?: string) => {
-    try {
-      showNote(t('online.working', { name: g.name }));
-      const res = await putOnline(g.id, meId);
-      if (res === 'pickMe') setPickMeFor(g);
-      else if (res === 'signIn') notify(t('online.signInTitle'), t('online.signInBody'));
-      else if (res === 'exists') {
-        // A copy went online first (a shared group file): this one can go up as its own group.
-        confirmAction(t('online.existsTitle'), t('online.existsBody'), t('online.existsButton'), () => {
-          const moved = giveNewId(g.id);
-          if (moved) void upload(moved, meId);
-        });
-      } else showNote(t('online.done', { name: g.name }));
-    } catch (e) {
-      notify(t('online.failed'), e instanceof Error ? e.message : String(e));
-    }
+    } else if (key === 'online') online.start(g);
   };
 
   // The owner confirms first, so nobody else can lock someone's group.
@@ -412,18 +387,7 @@ export function GroupsScreen({ navigation }: TabProps<'Home'>) {
           setPinFor(null);
         }}
       />
-      <ActionSheet
-        visible={!!pickMeFor}
-        title={t('online.whoTitle')}
-        subtitle={t('online.whoBody', { name: pickMeFor?.name ?? '' })}
-        options={(pickMeFor?.members ?? []).map((m) => ({ key: m.id, icon: 'person-outline', title: m.name }))}
-        onPick={(memberId) => {
-          const g = pickMeFor;
-          setPickMeFor(null);
-          if (g) void upload(g, memberId);
-        }}
-        onClose={() => setPickMeFor(null)}
-      />
+      {online.sheet}
     </ScreenContainer>
   );
 }
@@ -541,8 +505,10 @@ export function GroupCard({ group, pref, closed, visits, onPress, onMenu }: Card
   const total = groupTotal(group);
   const pinned = isPinned(pref);
   const daysLeft = pinDaysLeft(pref);
-  const { waiting } = useSync();
+  const { waiting, queued } = useSync();
   const unsent = group.online ? (waiting[group.id] ?? 0) : 0;
+  // Put online with no internet: waiting to go up.
+  const waitingNet = !group.online && queued.has(group.id);
 
   return (
     <Pressable
@@ -568,12 +534,14 @@ export function GroupCard({ group, pref, closed, visits, onPress, onMenu }: Card
               color={unsent ? colors.tint : colors.textSecondary}
               accessibilityLabel={unsent ? t('sync.waiting', { count: unsent }) : t('online.live')}
             />
+          ) : waitingNet ? (
+            <Ionicons name="cloud-upload-outline" size={13} color={colors.tint} accessibilityLabel={t('online.waitingNet')} />
           ) : null}
           {pinned && daysLeft ? <Text style={styles.pinDays}>{t('home.card.pinnedDays', { count: daysLeft })}</Text> : null}
         </View>
         {/* One line, like a chat list: who's in it and how many expenses. */}
         <View style={styles.metaRow}>
-          {group.members.length ? <Faces names={group.members.map((m) => m.name)} /> : null}
+          {group.members.length ? <Faces names={peopleIn(group).map((m) => m.name)} /> : null}
           <Text style={styles.meta} numberOfLines={1}>
             {t('count.expense', { count: group.expenses.filter(counted).length })}
             {visits ? ` · ${t('home.card.opened', { count: visits })}` : ''}

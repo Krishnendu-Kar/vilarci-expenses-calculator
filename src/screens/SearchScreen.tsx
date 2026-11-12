@@ -10,7 +10,7 @@ import { useGroups } from '../context/GroupsContext';
 import { useLock } from '../context/LockContext';
 import { groupsWith } from '../lib/people';
 import { searchMembers } from '../lib/search';
-import { groupTotal } from '../lib/split';
+import { groupTotal, peopleIn } from '../lib/split';
 import { money } from '../lib/money';
 import { groupKindOf } from '../data/categories';
 import { kindTint } from '../theme/colors';
@@ -21,7 +21,7 @@ import type { ScreenProps } from '../navigation/types';
 
 /** From Home's search pill: groups and people whose names match every word typed. */
 export function SearchScreen({ navigation }: ScreenProps<'Search'>) {
-  const { groups, people } = useGroups();
+  const { groups, people, names } = useGroups();
   const { isOpen } = useLock();
   const styles = useStyles();
   const { colors, dark } = useTheme();
@@ -32,7 +32,10 @@ export function SearchScreen({ navigation }: ScreenProps<'Search'>) {
 
   // Locked groups stay hidden here too, unless they're open right now.
   const groupHits = useMemo(() => (q ? searchMembers(groups.filter((g) => isOpen(g.id)), q) : []), [groups, q, isOpen]);
-  const peopleHits = useMemo(() => (q ? searchMembers(people, q) : []), [people, q]);
+  const peopleHits = useMemo(
+    () => (q ? searchMembers(people.map((p) => ({ ...p, name: names.person(p) })), q) : []),
+    [people, q, names],
+  );
 
   return (
     <ScreenContainer>
@@ -88,7 +91,7 @@ export function SearchScreen({ navigation }: ScreenProps<'Search'>) {
                   {g.name}
                 </Text>
                 <Text style={styles.meta} numberOfLines={1}>
-                  {t('count.member', { count: g.members.length })} · {closed ? t('home.card.locked') : money(groupTotal(g))}
+                  {t('count.member', { count: peopleIn(g).length })} · {closed ? t('home.card.locked') : money(groupTotal(g))}
                 </Text>
               </View>
               <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />

@@ -3,7 +3,6 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   addMonths,
-  applyRecurring,
   daysIn,
   dueDate,
   expenseMonth,
@@ -13,9 +12,9 @@ import {
   lastPickableMonth,
   monthsWithExpenses,
   NO_FILTER,
+  dropRepeats,
   recurringFrom,
   repeatExpenseId,
-  withRepeat,
 } from '../months';
 import { expense, group } from './fixtures';
 import type { Group } from '../../types';
@@ -78,72 +77,17 @@ describe('expense month and the filter', () => {
   });
 });
 
-describe('applyRecurring', () => {
-  const rent = expense('rent', 9000, 'A', ['A', 'B', 'C'], { date: '2026-08-01' });
-  const base = hostel(group(['A', 'B', 'C'], [rent]));
-  const withRent = { ...base, expenses: [{ ...rent, recurringId: 'r1' }], recurring: [recurringFrom(rent, 'r1', 0)] };
+describe('monthly repeats (removed)', () => {
+  const rent = expense('rent', 9000, 'A', ['A', 'B'], { date: '2026-08-01' });
+  const base = { ...group(['A', 'B'], [{ ...rent, recurringId: 'r1' }]), kind: 'hostel' as const };
 
-  it('adds each month that has come due, on its day', () => {
-    const out = applyRecurring(withRent, new Date(2026, 9, 30));
-    const added = out.expenses.filter((e) => e.id !== 'rent');
-    assert.deepEqual(added.map((e) => e.date).sort(), ['2026-09-01', '2026-10-01']);
-    assert.ok(added.every((e) => e.recurringId === 'r1' && e.amount === rent.amount));
-    assert.equal(out.recurring![0].lastMonth, '2026-10');
+  it('clears old repeats and keeps what they added', () => {
+    const out = dropRepeats({ ...base, recurring: [recurringFrom(rent, 'r1', 0)] });
+    assert.equal(out.recurring, undefined);
+    assert.deepEqual(out.expenses.map((e) => e.id), ['rent']);
   });
 
-  it("waits for the day, and changes nothing when nothing's due", () => {
-    const late = { ...withRent, recurring: [{ ...withRent.recurring[0], day: 31, lastMonth: '2026-09' }] };
-    assert.equal(applyRecurring(late, new Date(2026, 9, 30)), late);
-    const done = applyRecurring(withRent, new Date(2026, 9, 30));
-    assert.equal(applyRecurring(done, new Date(2026, 9, 31)), done);
-  });
-
-  it('still adds months that an older version had closed', () => {
-    const closed = { ...withRent, closedMonths: ['2026-09'] };
-    const out = applyRecurring(closed, new Date(2026, 9, 30));
-    assert.deepEqual(out.expenses.filter((e) => e.id !== 'rent').map((e) => e.date).sort(), ['2026-09-01', '2026-10-01']);
-  });
-
-  it('only runs for hostel and flat groups', () => {
-    const trip = { ...withRent, kind: 'trip' as const };
-    assert.equal(applyRecurring(trip, new Date(2026, 9, 30)), trip);
-  });
-
-  it('gives a month the same id on every phone, and skips one that came down from another phone', () => {
-    const a = applyRecurring(withRent, new Date(2026, 9, 30));
-    const b = applyRecurring(withRent, new Date(2026, 9, 30));
-    const ids = (g: Group) => g.expenses.filter((e) => e.id !== 'rent').map((e) => e.id).sort();
-    assert.deepEqual(ids(a), ids(b));
-    assert.deepEqual(ids(a), [repeatExpenseId('r1', '2026-09'), repeatExpenseId('r1', '2026-10')].sort());
-    // September's arrived from the server before this phone added it.
-    const synced = { ...withRent, expenses: [...withRent.expenses, a.expenses.find((e) => e.date === '2026-09-01')!] };
-    const out = applyRecurring(synced, new Date(2026, 9, 30));
-    assert.equal(out.expenses.filter((e) => e.recurringId === 'r1' && e.id !== 'rent').length, 2);
-    assert.equal(out.recurring![0].lastMonth, '2026-10');
-  });
-});
-
-describe('withRepeat', () => {
-  const g = hostel(group(['A', 'B'], []));
-  const wifi = expense('wifi', 800, 'A', ['A', 'B'], { date: '2026-10-31' });
-
-  it('switching it on makes a repeat linked to the expense', () => {
-    const { expense: e, recurring } = withRepeat(g, wifi, true, () => 'r9', 5);
-    assert.equal(e.recurringId, 'r9');
-    assert.deepEqual([recurring[0].day, recurring[0].lastMonth, recurring[0].amount], [31, '2026-10', 80000]);
-  });
-
-  it('editing keeps a 31st as the 31st even in a short month, and updates the money', () => {
-    const r = { ...recurringFrom(wifi, 'r9', 5), lastMonth: '2026-11' };
-    const nov = { ...wifi, id: 'nov', date: '2026-11-30', amount: 90000, payers: { A: 90000 }, recurringId: 'r9' };
-    const out = withRepeat({ ...g, recurring: [r] }, nov, true, id);
-    assert.deepEqual([out.recurring[0].day, out.recurring[0].amount, out.recurring[0].lastMonth], [31, 90000, '2026-11']);
-  });
-
-  it('switching it off stops the repeat and unlinks the expense', () => {
-    const r = recurringFrom(wifi, 'r9', 5);
-    const out = withRepeat({ ...g, recurring: [r] }, { ...wifi, recurringId: 'r9' }, false, id);
-    assert.equal(out.expense.recurringId, undefined);
-    assert.deepEqual(out.recurring, []);
+  it('leaves a group without repeats as it is', () => {
+    assert.equal(dropRepeats(base), base);
   });
 });

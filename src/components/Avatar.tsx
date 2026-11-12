@@ -9,7 +9,9 @@ function tintFor(name: string) {
   return avatarColors[h % avatarColors.length];
 }
 
-export function Avatar({ name, size = 36 }: { name: string; size?: number }) {
+export function Avatar({ name: shown, size = 36 }: { name: string; size?: number }) {
+  // "~Sayan Sen" (an account you haven't saved) has the same face as "Sayan Sen".
+  const name = shown.replace(/^~/, '');
   return (
     <View style={[styles.circle, { width: size, height: size, borderRadius: size / 2, backgroundColor: tintFor(name) }]}>
       <Text style={[styles.text, { fontSize: size * 0.38 }]}>{initials(name)}</Text>

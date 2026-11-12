@@ -4,7 +4,9 @@ import {
   computeBalances,
   counted,
   groupTotal,
+  activeIn,
   isSettled,
+  peopleIn,
   suggestTransfers,
   type MemberBalance,
   type Transfer,
@@ -67,7 +69,7 @@ export function buildTextReport(group: Group, pay?: PayTo) {
   const d = collect(group);
   const lines: string[] = [
     t('report.title', { name: group.name }),
-    [t('count.person', { count: group.members.length }), t('count.expense', { count: d.expenses.length }), d.range]
+    [t('count.person', { count: peopleIn(group).length }), t('count.expense', { count: d.expenses.length }), d.range]
       .filter(Boolean)
       .join(' · '),
     t('report.total', { amount: money(d.total) }),
@@ -104,7 +106,7 @@ export function buildTextReport(group: Group, pay?: PayTo) {
       lines.push(`_${longDate(day)}_`);
     }
     lines.push(`• ${e.title} — ${money(e.amount)}`);
-    const split = splitLong(e, d.names, group.members.length);
+    const split = splitLong(e, d.names, activeIn(group).length);
     const splitText = e.splitMode === 'equal' ? split : t('report.splitCustom', { split });
     lines.push(`   ${t('report.paidBy', { payers: payerLong(e, d.names), split: splitText })}`);
     if (e.note) lines.push(`   📝 ${e.note}`);
@@ -133,7 +135,7 @@ export function buildHtmlReport(group: Group, now = new Date(), pay?: PayTo) {
   const n = (id: string) => esc(d.names[id] ?? '?');
   const cats = categoryTotals(group);
   const maxCat = Math.max(1, ...cats.map((c) => c.amount));
-  const avg = group.members.length ? Math.round(d.total / group.members.length) : 0;
+  const avg = peopleIn(group).length ? Math.round(d.total / peopleIn(group).length) : 0;
 
   const transfers = d.transfers.length
     ? d.transfers
@@ -169,7 +171,7 @@ export function buildHtmlReport(group: Group, now = new Date(), pay?: PayTo) {
         <td class="nowrap">${esc(longDate(e.date))}</td>
         <td><b>${esc(e.title)}</b><div class="muted">${esc(categoryOf(e.category).label)}${e.note ? ` · ${esc(e.note)}` : ''}</div></td>
         <td>${esc(payerLong(e, d.names))}</td>
-        <td>${esc(splitLong(e, d.names, group.members.length))}</td>
+        <td>${esc(splitLong(e, d.names, activeIn(group).length))}</td>
         <td class="r nowrap"><b>${money(e.amount)}</b></td>
       </tr>`,
     )
@@ -184,7 +186,7 @@ export function buildHtmlReport(group: Group, now = new Date(), pay?: PayTo) {
         .join('')}</table>`
     : '';
 
-  const sub = [esc(groupKindOf(group.kind).label), esc(t('count.person', { count: group.members.length })), d.range ? esc(d.range) : '']
+  const sub = [esc(groupKindOf(group.kind).label), esc(t('count.person', { count: peopleIn(group).length })), d.range ? esc(d.range) : '']
     .filter(Boolean)
     .join(' · ');
 

@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '../components/ScreenContainer';
@@ -7,16 +7,20 @@ import { Chip } from '../components/Chip';
 import { Avatar } from '../components/Avatar';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { SectionLabel } from '../components/SectionLabel';
+import { Segmented } from '../components/Segmented';
 import { BottomSheet } from '../components/BottomSheet';
 import { MoreButton } from '../components/MoreButton';
 import { useMenu, type MenuItem } from '../context/MenuContext';
 import { useGroupExit } from './group/useGroupExit';
 import { useGroup, useGroups } from '../context/GroupsContext';
 import { useUndo } from '../context/UndoContext';
+import { useAuth } from '../context/AuthContext';
 import { memberIsInvolved } from '../lib/split';
-import { groupsWith, nameTakenIn, personForProfile, resolveMe } from '../lib/people';
+import { groupsWith, personForProfile, resolveMe } from '../lib/people';
 import { searchMembers } from '../lib/search';
-import { notify } from '../lib/confirm';
+import { confirmAction, notify } from '../lib/confirm';
+import { loadSetting, saveSetting } from '../lib/storage';
+import { draftHasContent, parseGroupDraft, type GroupDraft, type GroupWhere } from '../lib/groupDraft';
 import { can } from '../lib/permissions';
 import { newId } from '../lib/id';
 import { membersFromContacts } from '../lib/contacts';
@@ -36,7 +40,7 @@ const PREVIEW = 5;
 export function GroupFormScreen({ navigation, route }: ScreenProps<'GroupForm'>) {
   const groupId = route.params?.groupId;
   const existing = useGroup(groupId ?? '');
-  const { groups, people, profile, meMap, createGroup, updateGroup, moveToBin, restoreFromBin, linkProfile, setProfileName } =
+  const { groups, people, profile, meMap, createGroup, updateGroup, moveToBin, restoreFromBin, linkProfile, setProfileName, names } =
     useGroups();
   const { showUndo } = useUndo();
   const styles = useStyles();
@@ -60,11 +64,97 @@ export function GroupFormScreen({ navigation, route }: ScreenProps<'GroupForm'>)
     existing ? resolveMe(existing, profile, meMap[existing.id]) : myName ? youId : null,
   );
   const [linkOnSave, setLinkOnSave] = useState(!existing && !!myName);
+  // A new group: kept on this device (the default) or put online straight away.
+  const { user } = useAuth();
+  const [where, setWhere] = useState<GroupWhere>('local');
+  // Online needs an account: off to sign in, then back here with everything typed.
+  const signingIn = useRef(false);
+  useEffect(() => {
+    if (!user || !signingIn.current) return;
+    signingIn.current = false;
+    setWhere('online');
+  }, [user]);
+  // Signed in, the person who is you takes your account id everywhere; the
+  // form follows, so you go online as yourself.
+  useEffect(() => {
+    if (existing || !user || profile.personId !== user.id || !meId || meId === user.id) return;
+    if (people.some((p) => p.id === meId)) return;
+    setMembers((ms) => ms.map((m) => (m.id === meId ? { ...m, id: user.id } : m)));
+    setMeId(user.id);
+  }, [existing, user, profile.personId, meId, people]);
+  const pickWhere = (w: GroupWhere) => {
+    if (w === 'online' && !user) {
+      confirmAction(t('online.signInTitle'), t('groupForm.signInFirstBody'), t('account.signIn'), () => {
+        signingIn.current = true;
+        navigation.navigate('Auth', { mode: 'signIn' });
+      });
+      return;
+    }
+    setError(null);
+    setWhere(w);
+  };
+
+  // An unfinished New group comes back next time, with Discard to start over.
+  const [restored, setRestored] = useState(false);
+  const draftReady = useRef(!!existing);
+  const created = useRef(false);
+  const formRef = useRef<GroupDraft | null>(null);
+  useEffect(() => {
+    if (existing) return;
+    loadSetting('groupDraft')
+      .then((raw) => {
+        const d = parseGroupDraft(raw);
+        // Only into an empty form: something typed meanwhile wins.
+        if (d && !(formRef.current && draftHasContent(formRef.current))) {
+          setName(d.name);
+          setKind(d.kind);
+          setMembers(d.members);
+          setMeId(d.meId);
+          setWhere(d.where === 'online' && user ? 'online' : 'local');
+          setRestored(true);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        draftReady.current = true;
+      });
+    // Once, on opening.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [askName, setAskName] = useState(false);
   const [nameForMe, setNameForMe] = useState('');
   const [draft, setDraft] = useState('');
   const [showAll, setShowAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // The New group draft is saved a moment after each change, and on leaving.
+  const writeDraft = (d: GroupDraft | null) =>
+    void saveSetting('groupDraft', d && draftHasContent(d) ? JSON.stringify(d) : null).catch(() => {});
+  useEffect(() => {
+    if (existing) return;
+    formRef.current = { name, kind, members, meId, where, savedAt: Date.now() };
+    if (!draftReady.current || created.current) return;
+    const timer = setTimeout(() => writeDraft(formRef.current), 400);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existing, name, kind, members, meId, where]);
+  useEffect(
+    () => () => {
+      if (!existing && draftReady.current && !created.current) writeDraft(formRef.current);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+  const discardDraft = () => {
+    setName('');
+    setKind(route.params?.kind ?? 'trip');
+    setMembers(myName ? [{ id: youId, name: youPerson?.name ?? myName }] : []);
+    setMeId(myName ? youId : null);
+    setWhere('local');
+    setRestored(false);
+    setError(null);
+    writeDraft(null);
+  };
   // Adding, renaming and removing people happens in a popup.
   const [peopleOpen, setPeopleOpen] = useState(false);
   // The form's own list: the first few, or everyone; renaming in a small popup.
@@ -108,7 +198,8 @@ export function GroupFormScreen({ navigation, route }: ScreenProps<'GroupForm'>)
   };
 
   const addMember = (m: Member) => {
-    if (members.some((x) => x.name.toLowerCase() === m.name.toLowerCase())) {
+    // Not counting a linked guest's old row or someone who left.
+    if (members.some((x) => !x.gone && x.name.toLowerCase() === m.name.toLowerCase())) {
       setError(t('groupForm.alreadyIn', { name: m.name }));
       return false;
     }
@@ -200,7 +291,10 @@ export function GroupFormScreen({ navigation, route }: ScreenProps<'GroupForm'>)
   const addedNow = members.filter((m) => !openedWith.has(m.id));
 
   // A live group's list leaves out guests merged into someone and people who left.
-  const listed = members.filter((m) => !m.gone);
+  // You at the top (shown only: the group keeps its own order).
+  const listed = members.filter((m) => !m.gone).sort((a, b) => Number(b.id === meId) - Number(a.id === meId));
+  // On your own phone you're "You"; the group (and reports) keep your name.
+  const shownName = (m: Member) => (m.id === meId ? t('common.you') : names.of(m));
   const live = !!existing?.online;
   const saved = (m: Member) => !!existing?.members.some((x) => x.id === m.id);
 
@@ -234,16 +328,18 @@ export function GroupFormScreen({ navigation, route }: ScreenProps<'GroupForm'>)
     const trimmedName = name.trim();
     const cleaned = members.map((m) => ({ ...m, name: m.name.trim().replace(/\s+/g, ' ') }));
     if (!trimmedName) return setError(t('groupForm.errName'));
-    if (cleaned.length < 2) return setError(t('groupForm.errTwo'));
+    const goOnline = !existing && where === 'online';
+    // Online, you can start alone and bring the others in with the link.
+    if (cleaned.length < (goOnline ? 1 : 2)) return setError(t('groupForm.errTwo'));
     if (cleaned.some((m) => !m.name)) return setError(t('groupForm.errEmptyName'));
-    const lower = cleaned.map((m) => m.name.toLowerCase());
+    // People are told apart by id, so a name used in another group is fine;
+    // only the names typed in this list must not repeat. A linked guest's old
+    // row and anyone who left aren't in the list, and in a live group an
+    // account's name is their own (a guest can share it until linked).
+    const lower = cleaned.filter((m) => !m.gone && !(live && m.account)).map((m) => m.name.toLowerCase());
     if (new Set(lower).size !== lower.length) return setError(t('groupForm.errSameName'));
-    for (const m of cleaned) {
-      const person = people.find((p) => p.id === m.id);
-      if (!person || person.name === m.name) continue;
-      const clash = nameTakenIn(otherGroups, m.id, m.name);
-      if (clash) return setError(t('groupForm.errNameTaken', { name: m.name, group: clash.name }));
-    }
+    if (goOnline && !user) return pickWhere('online');
+    if (goOnline && (!meId || !cleaned.some((m) => m.id === meId))) return setError(t('groupForm.errOnlineYou'));
 
     const input = { name: trimmedName, kind, members: cleaned };
     // Adding yourself links your profile to that person.
@@ -253,7 +349,10 @@ export function GroupFormScreen({ navigation, route }: ScreenProps<'GroupForm'>)
       navigation.goBack();
     } else {
       const id = createGroup(input);
-      navigation.replace('GroupDetail', { groupId: id });
+      created.current = true;
+      writeDraft(null);
+      // Online: the group page puts it up as it opens (or queues it with no internet).
+      navigation.replace('GroupDetail', goOnline && meId ? { groupId: id, putOnlineAs: meId } : { groupId: id });
     }
   };
 
@@ -312,7 +411,7 @@ export function GroupFormScreen({ navigation, route }: ScreenProps<'GroupForm'>)
     <>
       <Text style={styles.fromLabel}>{t('groupForm.fromGroups')}</Text>
       {shown.map((p) => (
-        <PersonRow key={p.id} name={p.name} avatar={p.name} sub={groupNames(p)} onPress={() => addPerson(p)} />
+        <PersonRow key={p.id} name={names.person(p)} avatar={p.name} sub={groupNames(p)} onPress={() => addPerson(p)} />
       ))}
       {shown.length < candidates.length ? (
         <Pressable onPress={() => setShowAll(true)} hitSlop={8} style={styles.showAll}>
@@ -330,6 +429,15 @@ export function GroupFormScreen({ navigation, route }: ScreenProps<'GroupForm'>)
   return (
     <ScreenContainer>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        {restored ? (
+          <View style={styles.draftBar}>
+            <Ionicons name="document-text-outline" size={16} color={colors.tint} />
+            <Text style={styles.draftText}>{t('groupForm.draftRestored')}</Text>
+            <Pressable onPress={discardDraft} hitSlop={10} accessibilityRole="button">
+              <Text style={styles.draftDiscard}>{t('groupForm.discard')}</Text>
+            </Pressable>
+          </View>
+        ) : null}
         <Input
           label={t('groupForm.name')}
           placeholder={t('groupForm.namePlaceholder')}
@@ -345,6 +453,23 @@ export function GroupFormScreen({ navigation, route }: ScreenProps<'GroupForm'>)
           ))}
         </View>
         {kind === 'hostel' ? <Text style={styles.kindHint}>{t('groupForm.hostelHint')}</Text> : null}
+
+        {existing ? null : (
+          <>
+            <SectionLabel>{t('groupForm.where')}</SectionLabel>
+            <Segmented
+              options={[
+                { key: 'local' as const, label: t('groupForm.whereLocal') },
+                { key: 'online' as const, label: t('groupForm.whereOnline') },
+              ]}
+              value={where}
+              onChange={pickWhere}
+            />
+            <Text style={styles.whereHint}>
+              {where === 'online' ? t('groupForm.whereOnlineHint') : t('groupForm.whereLocalHint')}
+            </Text>
+          </>
+        )}
 
         <View style={styles.peopleHead}>
           <View style={styles.flex}>
@@ -368,11 +493,10 @@ export function GroupFormScreen({ navigation, route }: ScreenProps<'GroupForm'>)
             const items = memberMenu(m);
             return (
               <View key={m.id} style={styles.memberRow}>
-                <Avatar name={m.name || '?'} size={32} />
+                <Avatar name={names.of(m) || '?'} size={32} />
                 <Text style={styles.memberName} numberOfLines={1}>
-                  {m.name}
+                  {shownName(m)}
                 </Text>
-                {m.id === meId ? <Text style={styles.youTag}>{t('common.you')}</Text> : null}
                 {items.length ? (
                   <MoreButton size={20} hitSlop={10} onOpen={(anchor) => openMenu(anchor, items, (key) => pickMemberMenu(m, key))} />
                 ) : null}
@@ -483,9 +607,8 @@ export function GroupFormScreen({ navigation, route }: ScreenProps<'GroupForm'>)
                 <View key={m.id} style={styles.memberRow}>
                   <Avatar name={m.name || '?'} size={32} />
                   <Text style={styles.memberName} numberOfLines={1}>
-                    {m.name}
+                    {shownName(m)}
                   </Text>
-                  {m.id === meId ? <Text style={styles.youTag}>{t('common.you')}</Text> : null}
                   <Pressable
                     onPress={() => setMembers((ms) => ms.filter((x) => x.id !== m.id))}
                     hitSlop={10}
@@ -600,6 +723,19 @@ const useStyles = makeStyles((c) => ({
   content: { padding: spacing(5), paddingBottom: spacing(12) },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing(2), marginBottom: spacing(6) },
   kindHint: { fontSize: font.sm, color: c.textSecondary, marginTop: -spacing(4), marginBottom: spacing(6), lineHeight: 18 },
+  whereHint: { fontSize: font.sm, color: c.textSecondary, marginTop: spacing(2), marginBottom: spacing(6), lineHeight: 18 },
+  draftBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing(2),
+    backgroundColor: c.surfaceAlt,
+    borderRadius: radii.md,
+    paddingHorizontal: spacing(3),
+    paddingVertical: spacing(2.5),
+    marginBottom: spacing(4),
+  },
+  draftText: { flex: 1, fontSize: font.sm + 1, color: c.textPrimary },
+  draftDiscard: { fontSize: font.sm + 1, fontWeight: '700', color: c.danger },
   memberList: {
     backgroundColor: c.surface,
     borderRadius: radii.lg,
@@ -631,17 +767,6 @@ const useStyles = makeStyles((c) => ({
   memberName: { flex: 1, fontSize: font.md + 1, color: c.textPrimary, paddingVertical: spacing(1) },
   more: { fontSize: font.sm, color: c.textSecondary, paddingVertical: spacing(2.5), textAlign: 'center' },
   manageBtn: { marginBottom: spacing(5) },
-  youTag: {
-    flexShrink: 0,
-    fontSize: font.xs,
-    fontWeight: '700',
-    color: c.tint,
-    backgroundColor: c.surfaceAlt,
-    paddingHorizontal: spacing(2),
-    paddingVertical: 2,
-    borderRadius: radii.pill,
-    overflow: 'hidden',
-  },
   hint: { color: c.textSecondary, fontSize: font.sm + 1, paddingVertical: spacing(4), textAlign: 'center' },
   renameHint: { fontSize: font.sm, color: c.textSecondary, marginBottom: spacing(2), marginLeft: spacing(1) },
   addRow: { flexDirection: 'row', gap: spacing(2) },

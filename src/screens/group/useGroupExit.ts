@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from 'react';
+import { useGroups } from '../../context/GroupsContext';
 import { useSync } from '../../context/SyncContext';
 import { useUndo } from '../../context/UndoContext';
 import {
@@ -41,6 +42,7 @@ export function problemText(p: LeaveProblem, name?: string): string {
 export function useGroupExit(group: Group | undefined) {
   const { syncNow } = useSync();
   const { showNote } = useUndo();
+  const { names } = useGroups();
   // Hooks run before the page knows the group exists.
   const id = group?.id ?? '';
   const name = group?.name ?? '';
@@ -70,19 +72,21 @@ export function useGroupExit(group: Group | undefined) {
   );
 
   const remove = useCallback(
-    (m: Member) =>
-      confirmAction(translate('exit.removeTitle', { name: m.name }), translate('exit.removeBody'), translate('exit.remove'), () =>
+    (m: Member) => {
+      const who = names.of(m);
+      confirmAction(translate('exit.removeTitle', { name: who }), translate('exit.removeBody'), translate('exit.remove'), () =>
         void run(async () => {
           const res = await removeMember(id, m.id);
-          if (res.status === 'removed' || res.status === 'gone') showNote(translate('exit.removed', { name: m.name }));
+          if (res.status === 'removed' || res.status === 'gone') showNote(translate('exit.removed', { name: who }));
           else
             notify(
-              translate('exit.cantRemove', { name: m.name }),
-              problemText({ ...res, reason: res.status } as LeaveProblem, m.name),
+              translate('exit.cantRemove', { name: who }),
+              problemText({ ...res, reason: res.status } as LeaveProblem, who),
             );
         }),
-      ),
-    [id, run, showNote],
+      );
+    },
+    [id, run, showNote, names],
   );
 
   const deleteForEveryone = useCallback(

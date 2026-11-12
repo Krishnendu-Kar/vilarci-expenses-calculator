@@ -8,7 +8,7 @@ import { syncNow, type SyncApi } from '../sync/engine';
 import { rebase } from '../sync/merge';
 import { putOnlineData, type Change, type Membership, type Page, type Row, type SyncResponse } from '../sync/wire';
 import { allowed, can, DEFAULT_SETTINGS, type Action } from '../permissions';
-import { applyRecurring, repeatExpenseId } from '../months';
+import { dropRepeats } from '../months';
 import { expense } from './fixtures';
 import type { Group, GroupSettings, Role } from '../../types';
 
@@ -404,27 +404,6 @@ describe('sync between two phones', () => {
     assert.equal(amountOf(b.group(GID), DINNER), 90000);
   });
 
-  it('makes one rent, not two, when both phones add the month', async () => {
-    const RENT = 'aaaa0000-0000-4000-8000-00000000000e';
-    const rent = { ...expense('rent', 6000, A, [A, R], { date: '2026-08-01' }), id: 'aaaa0000-0000-4000-8000-00000000000f', recurringId: RENT };
-    const { server, a, b } = await setup('hostel', {
-      expenses: [rent],
-      recurring: [{ id: RENT, title: 'rent', amount: 600000, category: 'other', payers: { [A]: 600000 }, splitMode: 'equal', splitAmong: [A, R], day: 1, lastMonth: '2026-08', createdAt: 0 }],
-    });
-    const today = new Date(2026, 9, 15);
-    await a.edit(GID, (g) => applyRecurring(g, today));
-    await b.edit(GID, (g) => applyRecurring(g, today));
-    await a.sync();
-    await b.sync();
-    await a.sync();
-    const sept = repeatExpenseId(RENT, '2026-09');
-    for (const p of [a, b]) {
-      assert.equal(p.group(GID).expenses.filter((e) => e.recurringId === RENT).length, 3, 'August, September, October once each');
-      assert.equal(p.group(GID).recurring?.[0].lastMonth, '2026-10');
-    }
-    assert.equal(server.groups.get(GID)!.events.filter((e) => (e.data as Row).id === sept).length, 1);
-    assert.equal(server.row(GID, 'recurring', RENT)?.last_month, '2026-10');
-  });
 });
 
 describe('sync pieces', () => {
@@ -452,15 +431,10 @@ describe('sync pieces', () => {
           for (let i = 0; i < s.params.length; i += 5) rows.push(s.params.slice(i, i + 5));
           return rows;
         });
-    const later = applyRecurring(g, new Date(2026, 9, 20));
-    assert.deepEqual(outboxOf(g, later), [], 'a local group queues nothing');
+    assert.deepEqual(outboxOf(g, dropRepeats(g)), [], 'a local group queues nothing');
 
     const live = { ...g, online: online('admin') };
-    const added = applyRecurring(live, new Date(2026, 9, 20));
-    const lines = outboxOf(live, added);
-    const id = repeatExpenseId('r', '2026-10');
-    assert.deepEqual(lines.find((l) => l[2] === id), ['expenses', 'g', id, 'upsert', Date.UTC(2026, 9, 1)], "a repeat's expense has the due day's fixed time");
-    assert.deepEqual(lines.find((l) => l[2] === 'r'), ['recurring', 'g', 'r', 'upsert', 0], 'a repeat that only moved on a month never wins over an edit');
+    assert.deepEqual(outboxOf(live, dropRepeats(live)), [['recurring', 'g', 'r', 'delete', 777]], 'clearing an old repeat deletes it on the server');
     const renamed = { ...live, name: 'Flat 2' };
     assert.deepEqual(outboxOf(live, renamed), [['groups', 'g', 'g', 'upsert', 777]]);
     assert.deepEqual(outboxOf(g, live), [], 'going online uploads the group whole instead');

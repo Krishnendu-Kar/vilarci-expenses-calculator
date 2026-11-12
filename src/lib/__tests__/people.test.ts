@@ -1,7 +1,21 @@
 /// <reference types="node" />
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { adoptAccountId, applyMembers, nameTakenIn, netsByPerson, netsFor, personForProfile, reconcilePeople, renameInGroups, resolveMe, totals } from '../people';
+import {
+  adoptAccountId,
+  applyMembers,
+  makeNames,
+  netsByPerson,
+  netsFor,
+  personForProfile,
+  groupsWith,
+  reconcilePeople,
+  renameInGroups,
+  resolveMe,
+  restoreSavedNames,
+  savedNames,
+  totals,
+} from '../people';
 import { expense, group } from './fixtures';
 import type { Group, Person } from '../../types';
 
@@ -54,11 +68,12 @@ describe('names', () => {
     assert.deepEqual(out.map((g) => g.members[0].name), ['K', 'K']);
   });
 
-  it("won't let a rename take a name someone else has in one of their groups", () => {
-    assert.equal(nameTakenIn([goa, mess], 'A', 'sayak')?.id, 'mess');
-    assert.equal(nameTakenIn([goa, mess], 'A', 'Rahul'), undefined);
-    // Tamal isn't in Sayak's groups, so Sayak can be renamed Tamal.
-    assert.equal(nameTakenIn([goa, mess], 'C', 'Tamal'), undefined);
+  it('renames from a form in local groups only: a live group keeps its names', () => {
+    const online = { role: 'member' as const, status: 'active' as const, settings: { editInfo: 'all' as const, addExpenses: 'all' as const, addGuests: 'all' as const, requireApproval: false } };
+    const live = { ...mess, online };
+    const out = applyMembers([goa, live], [person('A', 'Krish')], [{ id: 'A', name: 'Krishnendu' }]);
+    assert.equal(out.groups[0].members[0].name, 'Krishnendu');
+    assert.equal(out.groups[1], live, 'your account is never renamed from a form');
   });
 });
 
@@ -74,6 +89,13 @@ describe('resolveMe', () => {
   it("doesn't guess", () => {
     assert.equal(resolveMe(g, { name: 'Kri', personId: null }), null);
     assert.equal(resolveMe(g, { name: '', personId: 'gone' }, 'gone'), null);
+  });
+
+  it('never picks a guest that was linked to an account', () => {
+    const live = named(group(['A', 'B'], []), { A: 'Swapnanil Pal', B: 'Swapnanil Pal' });
+    live.members[0] = { ...live.members[0], gone: 'merged' };
+    assert.equal(resolveMe(live, { name: 'Swapnanil Pal', personId: null }), 'B');
+    assert.equal(resolveMe(live, { name: 'Krish', personId: 'A' }, 'A'), null);
   });
 });
 
@@ -153,5 +175,76 @@ describe('people in live groups', () => {
     const live = { ...group(['me', 'B'], []), online };
     const s = { groups: [live], bin: [], people: [person('me', 'Krish')], meMap: {}, profile: { name: 'Krish', personId: 'me' } };
     assert.equal(adoptAccountId(s, 'me', 'acct').groups[0], live);
+  });
+});
+
+describe('names shown on this phone (WhatsApp style)', () => {
+  const online = { role: 'member' as const, status: 'active' as const, settings: { editInfo: 'all' as const, addExpenses: 'all' as const, addGuests: 'all' as const, requireApproval: false } };
+  const live: Group = {
+    ...group([], []),
+    online,
+    members: [
+      { id: 'me', name: 'Krishnendu', account: true },
+      { id: 'sayan', name: 'Sayan Sen', account: true },
+      { id: 'neha', name: 'Neha Das', account: true },
+      { id: 'guest', name: 'Rahul' },
+    ],
+  };
+  const local = { ...group([], [], 'local'), members: [{ id: 'bubai', name: 'Bubai' }, { id: 'neha', name: 'Neha' }] };
+  const people: Person[] = [
+    person('me', 'Krish'),
+    { ...person('sayan', 'Sayan Sen') },
+    { ...person('neha', 'Neha'), saved: true },
+    person('guest', 'Rahul'),
+    person('bubai', 'Bubai'),
+  ];
+  const names = makeNames([live, local], people, new Set(['me']));
+
+  it('marks accounts you have not saved with ~, and shows saved names as you saved them', () => {
+    assert.deepEqual(names.all(live), { me: 'Krishnendu', sayan: '~Sayan Sen', neha: 'Neha', guest: 'Rahul' });
+    assert.equal(names.all(live), names.all(live), 'the same map for the same group');
+    assert.deepEqual(names.all(local), { bubai: 'Bubai', neha: 'Neha' });
+  });
+
+  it('shows People the same way, and knows their own names', () => {
+    assert.deepEqual(people.map((p) => names.person(p)), ['Krish', '~Sayan Sen', 'Neha', 'Rahul', 'Bubai']);
+    assert.equal(names.unsaved('sayan'), true);
+    assert.equal(names.unsaved('neha'), false);
+    assert.equal(names.unsaved('guest'), false, 'guests have no name of their own');
+    assert.equal(names.unsaved('me'), false);
+    assert.equal(names.own('neha'), 'Neha Das');
+    assert.equal(names.own('guest'), undefined);
+  });
+
+  it('round-trips saved names through a backup, keeping names already saved here', () => {
+    assert.deepEqual(savedNames(people), [{ id: 'neha', name: 'Neha' }]);
+    const here = [person('sayan', 'Sayan Sen'), { ...person('neha', 'Neha'), saved: true }];
+    const out = restoreSavedNames(here, [{ id: 'sayan', name: 'Sayan' }, { id: 'neha', name: 'Old name' }, { id: 'new', name: 'Bhai' }], 9);
+    assert.deepEqual(out, [
+      { id: 'sayan', name: 'Sayan', createdAt: 0, saved: true },
+      { id: 'neha', name: 'Neha', createdAt: 0, saved: true },
+      { id: 'new', name: 'Bhai', createdAt: 9, saved: true },
+    ]);
+    assert.equal(restoreSavedNames(here, []), here);
+    assert.equal(restoreSavedNames(here, [{ id: 'neha', name: 'Other' }]), here, 'nothing changed');
+  });
+});
+
+describe('removing someone from People', () => {
+  // A live group where guest G was linked into account A.
+  const live = (): Group => {
+    const g = group(['A', 'G', 'B'], []);
+    g.members = g.members.map((m) => (m.id === 'G' ? { ...m, gone: 'merged' as const } : m));
+    return g;
+  };
+
+  it("doesn't count a linked guest's old row as being in the group", () => {
+    assert.deepEqual(groupsWith([live()], 'G'), []);
+    assert.equal(groupsWith([live()], 'A').length, 1);
+  });
+
+  it("doesn't bring a linked guest back into People on the next start", () => {
+    const { people } = reconcilePeople([live()], []);
+    assert.deepEqual(people.map((p) => p.id).sort(), ['A', 'B']);
   });
 });

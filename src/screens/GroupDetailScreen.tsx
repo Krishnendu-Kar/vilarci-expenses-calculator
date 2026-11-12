@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '../components/ScreenContainer';
@@ -7,12 +7,14 @@ import { DISPLAY_FONT } from '../components/LuxeCard';
 import { ActionSheet, type SheetOption } from '../components/ActionSheet';
 import { Pager } from '../components/Pager';
 import { PrimaryButton } from '../components/PrimaryButton';
+import { PullDrawer } from '../components/PullDrawer';
 import { MoreButton } from '../components/MoreButton';
 import { useAfterPaint } from '../components/useAfterPaint';
 import { useGroup, useGroups } from '../context/GroupsContext';
 import { useLock } from '../context/LockContext';
+import { useUndo } from '../context/UndoContext';
 import { useMenu, type MenuItem } from '../context/MenuContext';
-import { computeBalances, groupTotal, suggestTransfers } from '../lib/split';
+import { computeBalances, groupTotal, peopleIn, suggestTransfers } from '../lib/split';
 import { addMonths, filterGroup, firstMonthOf, lastPickableMonth, NO_FILTER, thisMonth, type ExpenseFilter } from '../lib/months';
 import { resolveMe } from '../lib/people';
 import { isArchived } from '../lib/groupFilters';
@@ -32,6 +34,7 @@ import { SettleTab } from './group/SettleTab';
 import { StatsTab } from './group/StatsTab';
 import { FilterSheet } from './group/FilterSheet';
 import { useGroupExit } from './group/useGroupExit';
+import { usePutOnline } from './group/usePutOnline';
 import { useUnreadActivity } from './group/activitySeen';
 import { useIsFocused } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
@@ -46,7 +49,8 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetail'>) {
   const group = useGroup(route.params.groupId);
-  const { recordVisit, prefs, unarchiveGroup, profile, meMap, upiIds } = useGroups();
+  const { recordVisit, prefs, unarchiveGroup, profile, meMap, upiIds, names: shown, moveToBin, restoreFromBin } = useGroups();
+  const { showUndo } = useUndo();
   const styles = useStyles();
   const { colors } = useTheme();
   const { t } = useI18n();
@@ -62,13 +66,36 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
   const [filterOpen, setFilterOpen] = useState(false);
   const { isOpen, open } = useLock();
   const { openMenu } = useMenu();
+  // Put online from here too, not only from Home. Under a new id, the page follows it.
+  // A group just created as Online: once it's up, its invite opens (bringing friends in is next).
+  const justCreated = useRef(false);
+  const online = usePutOnline({
+    onMoved: useCallback((groupId: string) => navigation.setParams({ groupId }), [navigation]),
+    onOnline: useCallback(
+      (groupId: string) => {
+        if (!justCreated.current) return;
+        justCreated.current = false;
+        navigation.navigate('Invite', { groupId });
+      },
+      [navigation],
+    ),
+  });
+  const putOnlineAs = route.params.putOnlineAs;
+  useEffect(() => {
+    if (!putOnlineAs || !group || group.online) return;
+    navigation.setParams({ putOnlineAs: undefined });
+    justCreated.current = true;
+    online.go(group, putOnlineAs);
+  }, [putOnlineAs, group, navigation, online.go]);
   const exit = useGroupExit(group);
   const { user } = useAuth();
   const focused = useIsFocused();
   const unread = useUnreadActivity(group, user?.id ?? null, focused);
-  const { state: syncState, waiting, syncNow } = useSync();
+  const { state: syncState, waiting, syncNow, queued } = useSync();
   // Changes of this group not uploaded yet (onlinedb.md §9.8): shown until they're up.
   const unsent = group?.online ? (waiting[group.id] ?? 0) : 0;
+  // A local group waiting for internet to go online: the same cloud.
+  const waitingNet = !!group && !group.online && queued.has(group.id);
   const closed = !!group && !isOpen(group.id);
   const unlock = useCallback(
     () => open(route.params.groupId, t('lock.promptOpen', { name: group?.name ?? '' })),
@@ -101,6 +128,8 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
         ? [{ key: 'link', icon: 'link-outline' as const, title: t('detail.shareLink') }]
         : []),
       { key: 'report', icon: 'share-social-outline', title: t('detail.shareReport') },
+      // A local group: put it online to invite people (needs signing in).
+      ...(!group.online ? [{ key: 'online', icon: 'cloud-upload-outline' as const, title: t('online.menu') }] : []),
       ...(group.online && can('change_settings', group)
         ? [{ key: 'access', icon: 'shield-checkmark-outline' as const, title: t('detail.manageAccess') }]
         : []),
@@ -114,6 +143,11 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
       ...(group.online?.status === 'active' && can('leave', group)
         ? [{ key: 'leave', icon: 'exit-outline' as const, title: t('exit.leave'), danger: true }]
         : []),
+      // Into the Bin (30 days, with undo). A live group you're still in belongs to
+      // everyone in it: Leave or Delete for everyone above, not this.
+      ...(group.online?.status !== 'active'
+        ? [{ key: 'bin', icon: 'trash-outline' as const, title: t('groupMenu.bin'), danger: true }]
+        : []),
     ];
     const pick = (key: string) => {
       if (key === 'edit') navigation.navigate('GroupForm', { groupId: group.id });
@@ -123,18 +157,24 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
       else if (key === 'leave') exit.leave();
       else if (key === 'delete') exit.deleteForEveryone();
       else if (key === 'restore') exit.restore();
+      else if (key === 'online') online.start(group);
+      else if (key === 'bin') {
+        const removed = moveToBin(group.id);
+        navigation.popToTop();
+        if (removed) showUndo(t('bin.moved', { name: removed.name }), () => restoreFromBin(removed.id));
+      }
     };
     navigation.setOptions({
       title: group.name,
       headerRight: () => (
         <View style={styles.headerActions}>
           {/* Changes waiting to go up: tap to try now. Nothing shows when all is up. */}
-          {unsent ? (
+          {unsent || waitingNet ? (
             <Pressable
               onPress={() => void syncNow()}
               hitSlop={10}
               accessibilityRole="button"
-              accessibilityLabel={t('sync.waiting', { count: unsent })}
+              accessibilityLabel={waitingNet ? t('online.waitingNet') : t('sync.waiting', { count: unsent })}
             >
               <Ionicons
                 name={syncState === 'syncing' ? 'sync-outline' : syncState === 'failed' ? 'cloud-offline-outline' : 'cloud-upload-outline'}
@@ -159,7 +199,25 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
         </View>
       ),
     });
-  }, [navigation, group, closed, colors, styles, t, openMenu, exit, unread, unsent, syncState, syncNow]);
+  }, [
+    navigation,
+    group,
+    closed,
+    colors,
+    styles,
+    t,
+    openMenu,
+    exit,
+    unread,
+    unsent,
+    waitingNet,
+    syncState,
+    syncNow,
+    online.start,
+    moveToBin,
+    restoreFromBin,
+    showUndo,
+  ]);
 
   // The page shows first (header, name, tabs) and works out the numbers
   // straight after, so opening a group never waits for the maths.
@@ -193,8 +251,10 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
     );
   }
 
-  const names = Object.fromEntries(group.members.map((m) => [m.id, m.name]));
+  // As this phone shows them ("~Name" for accounts you haven't saved). Reports keep the group's names.
+  const names = shown.all(group);
   const total = ready ? groupTotal(view) : 0;
+  const headcount = peopleIn(group).length;
   const meId = resolveMe(group, profile, meMap[group.id]);
   const archived = isArchived(prefs[group.id]);
   // A live group you can only read now, and why.
@@ -261,24 +321,30 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
       {/* The header colour carries on: the total, then the tabs, like the website's phone. */}
       <View style={styles.hero}>
         <View style={styles.total}>
-          <View style={styles.labelRow}>
-            {month ? (
-              <MonthStep icon="chevron-back" label={t('detail.prevMonth')} enabled={canBack} onPress={() => stepMonth(-1)} />
-            ) : null}
-            <Text style={styles.totalLabel} numberOfLines={1}>
-              {totalLabel}
-            </Text>
-            {month ? (
-              <MonthStep icon="chevron-forward" label={t('detail.nextMonth')} enabled={canAhead} onPress={() => stepMonth(1)} />
-            ) : null}
-          </View>
-          {/* Same height before the numbers are in, so nothing jumps. */}
-          <Text style={[styles.totalValue, !ready && styles.waiting]} numberOfLines={1} adjustsFontSizeToFit>
-            {money(total)}
-          </Text>
-          <Text style={[styles.totalSub, !ready && styles.waiting]} numberOfLines={1}>
-            {t('detail.perPerson', { amount: money(Math.round(total / group.members.length)) })} · {t('count.person', { count: group.members.length })}
-          </Text>
+          {/* Pull up (or tap the handle) and the whole total folds away, leaving only the
+              handle over the tabs; pull down to bring it back. Open each time the page opens. */}
+          <PullDrawer initiallyOpen showLabel={t('detail.showTotal')} hideLabel={t('detail.hideTotal')}>
+            <View style={styles.totalBody}>
+              <View style={styles.labelRow}>
+                {month ? (
+                  <MonthStep icon="chevron-back" label={t('detail.prevMonth')} enabled={canBack} onPress={() => stepMonth(-1)} />
+                ) : null}
+                <Text style={styles.totalLabel} numberOfLines={1}>
+                  {totalLabel}
+                </Text>
+                {month ? (
+                  <MonthStep icon="chevron-forward" label={t('detail.nextMonth')} enabled={canAhead} onPress={() => stepMonth(1)} />
+                ) : null}
+              </View>
+              {/* Same height before the numbers are in, so nothing jumps. */}
+              <Text style={[styles.totalValue, !ready && styles.waiting]} numberOfLines={1} adjustsFontSizeToFit>
+                {money(total)}
+              </Text>
+              <Text style={[styles.totalSub, !ready && styles.waiting]} numberOfLines={1}>
+                {t('detail.perPerson', { amount: money(Math.round(total / headcount)) })} · {t('count.person', { count: headcount })}
+              </Text>
+            </View>
+          </PullDrawer>
         </View>
         <View style={styles.tabs} accessibilityRole="tablist">
           {tabLabels.map(({ key, label }) => {
@@ -325,7 +391,6 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
             filter={filter}
             onFilter={setFilter}
             onOpenFilter={() => setFilterOpen(true)}
-            onRecurring={() => navigation.navigate('Recurring', { groupId: group.id })}
             names={names}
             onOpen={(e) => navigation.navigate('ExpenseForm', { groupId: group.id, expenseId: e.id })}
           />
@@ -351,6 +416,7 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
         onClose={() => setSheetOpen(false)}
       />
       <FilterSheet visible={filterOpen} group={group} value={filter} onApply={setFilter} onClose={() => setFilterOpen(false)} />
+      {online.sheet}
     </ScreenContainer>
   );
 }
@@ -414,9 +480,11 @@ const useStyles = makeStyles((c) => ({
   unlockBtn: { alignSelf: 'stretch', marginTop: spacing(6) },
   // Same colour as the header bar above it, so the two read as one piece.
   hero: { backgroundColor: c.header, paddingHorizontal: spacing(5) },
-  total: { alignItems: 'center', paddingTop: spacing(3), paddingBottom: spacing(4) },
+  total: { paddingBottom: spacing(1) },
   labelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing(3), alignSelf: 'stretch' },
   totalLabel: { color: c.white, opacity: 0.75, fontSize: font.sm, letterSpacing: 0.3, flexShrink: 1 },
+  // The space above folds away with it.
+  totalBody: { alignItems: 'center', alignSelf: 'stretch', paddingTop: spacing(3) },
   step: {
     width: 28,
     height: 28,

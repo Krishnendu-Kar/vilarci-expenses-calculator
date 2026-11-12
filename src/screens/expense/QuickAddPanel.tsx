@@ -19,6 +19,7 @@ import {
   type QuickRow,
 } from '../../lib/quickAdd';
 import { resolveMe } from '../../lib/people';
+import { activeIn } from '../../lib/split';
 import type { ManyForm } from '../../lib/drafts';
 import { money } from '../../lib/money';
 import { todayISO } from '../../lib/format';
@@ -68,11 +69,13 @@ const capitalize = (s: string) => s.replace(/\b\p{L}/gu, (c) => c.toUpperCase())
  * tap Convert, check the expenses it found, add them all at once.
  */
 export function QuickAddPanel({ group, initial, converted, onConvert, onClear, onChange, onDone }: Props) {
-  const { addExpenses, people, profile, meMap, setMe } = useGroups();
+  const { addExpenses, people, profile, meMap, setMe, names: shown } = useGroups();
   const styles = useStyles();
   const { colors, dark } = useTheme();
   const { t } = useI18n();
-  const members = group.members;
+  // Read and matched by the name you know them by: the one you saved, else their own.
+  // Only people still in the group: a linked guest or someone who left can't be in a new expense.
+  const members = useMemo(() => activeIn(group).map((m) => ({ ...m, name: shown.of(m).replace(/^~/, '') })), [group, shown]);
   const [text, setText] = useState(initial?.text ?? '');
   const [date, setDate] = useState(initial?.date ?? todayISO());
   const [category, setCategory] = useState<CategoryKey>(initial?.category ?? 'food');
@@ -96,8 +99,8 @@ export function QuickAddPanel({ group, initial, converted, onConvert, onClear, o
     if (converted && !text.trim()) onClear();
   }, [converted, text, onClear]);
 
-  // People from your other groups who aren't in this one.
-  const outsiders = useMemo(() => people.filter((p) => !members.some((m) => m.id === p.id)), [people, members]);
+  // People from your other groups who were never in this one (a linked guest isn't brought back).
+  const outsiders = useMemo(() => people.filter((p) => !group.members.some((m) => m.id === p.id)), [people, group.members]);
 
   // The preview trails the typing slightly, so the text box never lags or
   // drops letters while a long list is being re-read.
@@ -296,7 +299,7 @@ export function QuickAddPanel({ group, initial, converted, onConvert, onClear, o
             <FormSection icon="person-circle-outline" title={t('quick.whoIsMe')} attention={!meId}>
               <View style={styles.chips}>
                 {members.map((m) => (
-                  <Chip key={m.id} label={m.name} selected={meId === m.id} onPress={() => setMeId(m.id)} />
+                  <Chip key={m.id} label={shown.of(m)} selected={meId === m.id} onPress={() => setMeId(m.id)} />
                 ))}
               </View>
             </FormSection>
@@ -328,7 +331,7 @@ export function QuickAddPanel({ group, initial, converted, onConvert, onClear, o
                         {members.map((m) => (
                           <Chip
                             key={m.id}
-                            label={m.name}
+                            label={shown.of(m)}
                             selected={id === m.id}
                             onPress={() => {
                               setNames((s) => ({ ...s, [k]: m.id }));
@@ -338,7 +341,7 @@ export function QuickAddPanel({ group, initial, converted, onConvert, onClear, o
                         ))}
                         {known ? (
                           <Chip
-                            label={t('quick.addKnown', { name: known.name })}
+                            label={t('quick.addKnown', { name: shown.person(known) })}
                             icon="people-outline"
                             selected={names[k] === known.id}
                             onPress={() => {
@@ -407,7 +410,7 @@ export function QuickAddPanel({ group, initial, converted, onConvert, onClear, o
                         <Text style={styles.editorLabel}>{t('quick.paidBy')}</Text>
                         <View style={styles.chips}>
                           {everyone.map((m) => (
-                            <Chip key={m.id} label={m.name} selected={r.payer === m.id} onPress={() => fixRow(key, { payer: m.id })} />
+                            <Chip key={m.id} label={shown.of(m)} selected={r.payer === m.id} onPress={() => fixRow(key, { payer: m.id })} />
                           ))}
                         </View>
                         <Text style={styles.editorLabel}>{r.needCount ? t('quick.forPick', { count: r.needCount }) : t('quick.for')}</Text>
@@ -420,7 +423,7 @@ export function QuickAddPanel({ group, initial, converted, onConvert, onClear, o
                             return (
                               <Chip
                                 key={m.id}
-                                label={m.name}
+                                label={shown.of(m)}
                                 selected={on}
                                 onPress={() => {
                                   const cur = r.among ?? [];

@@ -251,7 +251,13 @@ export function sanitizePeople(raw: unknown): Person[] {
   const out: Person[] = [];
   for (const p of raw) {
     if (isObj(p) && isStr(p.id) && isStr(p.name) && p.name.trim() && !out.some((x) => x.id === p.id)) {
-      out.push({ id: p.id, name: p.name.trim().slice(0, 30), createdAt: typeof p.createdAt === 'number' ? p.createdAt : 0 });
+      out.push({
+        id: p.id,
+        name: p.name.trim().slice(0, 30),
+        createdAt: typeof p.createdAt === 'number' ? p.createdAt : 0,
+        // SQLite gives 1/0.
+        ...(p.saved === true || p.saved === 1 ? { saved: true } : {}),
+      });
     }
   }
   return out;

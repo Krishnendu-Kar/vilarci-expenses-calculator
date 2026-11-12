@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '../../components/Avatar';
 import { EmptyState } from '../../components/EmptyState';
 import { SearchBar } from '../../components/SearchBar';
@@ -14,9 +15,10 @@ import { isSettled, type MemberBalance } from '../../lib/split';
 import { searchMembers } from '../../lib/search';
 import { money } from '../../lib/money';
 import { can } from '../../lib/permissions';
+import { UNSAVED_MARK } from '../../lib/people';
 import { linkGuest, setRole } from '../../lib/api/groups';
 import { notify } from '../../lib/confirm';
-import { makeStyles } from '../../theme/ThemeContext';
+import { makeStyles, useTheme } from '../../theme/ThemeContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { font, radii, spacing } from '../../theme/tokens';
 import { useTabStyles } from './styles';
@@ -34,13 +36,14 @@ interface Props {
 /**
  * One row per member: what they paid, their fair share, and what they owe or
  * get back. Tags say who's who: Creator / Admin in a live group, Guest for
- * someone with no account (only added for the sums). Tapping someone with an
- * account opens their page; in a live group admins get a ⋮ menu (roles,
- * linking a guest to a member, onlinedb.md §13, §16).
+ * someone with no account (only added for the sums). Tapping anyone but you
+ * opens their page; in a live group admins get a ⋮ menu (roles, linking a
+ * guest to someone with an account, onlinedb.md §13, §16).
  */
 export function MembersTab({ group, balances, names, meId }: Props) {
   const t = useTabStyles();
   const styles = useStyles();
+  const { colors } = useTheme();
   const i18n = useI18n();
   const navigation = useNavigation();
   const { user } = useAuth();
@@ -52,6 +55,8 @@ export function MembersTab({ group, balances, names, meId }: Props) {
   const exit = useGroupExit(group);
   const live = !!group.online;
   const byId = new Map(group.members.map((m) => [m.id, m]));
+  // A guest can only be linked to someone with an account, never to another guest.
+  const linkTargets = group.members.filter((m) => m.account && !m.gone);
 
   // Has an account: in a live group the server says; in a local one only you can (once signed in).
   const hasAccount = (m: Member | undefined) => (live ? !!m?.account : !!user && m?.id === meId);
@@ -62,7 +67,8 @@ export function MembersTab({ group, balances, names, meId }: Props) {
       .filter((b) => byId.get(b.memberId)?.gone !== 'merged')
       .map((b) => ({ ...b, name: names[b.memberId] ?? '?' })),
     query,
-  ).sort((a, b) => b.net - a.net);
+    // You at the top, then whoever gets back the most.
+  ).sort((a, b) => Number(b.memberId === meId) - Number(a.memberId === meId) || b.net - a.net);
 
   const act = async (fn: () => Promise<unknown>) => {
     try {
@@ -83,7 +89,7 @@ export function MembersTab({ group, balances, names, meId }: Props) {
           : { key: 'admin', icon: 'shield-checkmark-outline', title: i18n.t('members.makeAdmin') },
       );
     }
-    if (!m.account && can('link_guest', group)) items.push({ key: 'link', icon: 'link-outline', title: i18n.t('members.link') });
+    if (!m.account && linkTargets.length && can('link_guest', group)) items.push({ key: 'link', icon: 'link-outline', title: i18n.t('members.link') });
     // Anyone but the creator and yourself (that's Leave), only once settled (the server checks).
     if (m.role !== 'creator' && m.id !== meId && can('remove_member', group)) {
       items.push({ key: 'remove', icon: 'person-remove-outline', title: i18n.t('exit.remove'), danger: true });
@@ -103,7 +109,23 @@ export function MembersTab({ group, balances, names, meId }: Props) {
 
   return (
     <ScrollView contentContainerStyle={t.list} keyboardShouldPersistTaps="handled">
-      <SearchBar value={query} onChangeText={setQuery} placeholder={i18n.t('members.search')} />
+      <View style={styles.searchRow}>
+        <View style={styles.flex}>
+          <SearchBar value={query} onChangeText={setQuery} placeholder={i18n.t('members.search')} />
+        </View>
+        {/* A live group: its link, QR and code, to bring more people in. */}
+        {live && can('share_invite', group) ? (
+          <Pressable
+            onPress={() => navigation.navigate('Invite', { groupId: group.id })}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={i18n.t('invite.title')}
+            style={({ pressed }) => [styles.inviteBtn, pressed && styles.pressed]}
+          >
+            <Ionicons name="link-outline" size={20} color={colors.tint} />
+          </Pressable>
+        ) : null}
+      </View>
       <Text style={t.explain}>{i18n.t('members.explain')}</Text>
       {rows.length === 0 ? (
         <EmptyState icon="search-outline" title={i18n.t('members.noMatch.title')} body={i18n.t('members.noMatch.body', { query: query.trim() })} />
@@ -117,17 +139,18 @@ export function MembersTab({ group, balances, names, meId }: Props) {
         return (
           <Pressable
             key={b.memberId}
-            disabled={!account}
+            // Everyone opens their page but you (your profile is the Profile tab).
+            disabled={me}
             onPress={() => navigation.navigate('Person', { personId: b.memberId })}
             style={({ pressed }) => [t.row, me && t.rowMe, pressed && styles.pressed]}
           >
             <Avatar name={b.name} />
             <View style={[t.rowBody, styles.gap]}>
               <View style={styles.nameRow}>
-                <Text style={[t.rowTitle, styles.name]} numberOfLines={1}>
-                  {b.name}
+                {/* On your own phone you're "You" (others see your name). */}
+                <Text style={[t.rowTitle, styles.name, account && b.name.startsWith(UNSAVED_MARK) && styles.unsaved]} numberOfLines={1}>
+                  {me ? i18n.t('common.you') : b.name}
                 </Text>
-                {me ? <Text style={t.youTag}>{i18n.t('common.you')}</Text> : null}
                 {m?.role === 'creator' && live ? <Text style={[styles.tag, styles.tagRole]}>{i18n.t('members.creator')}</Text> : null}
                 {m?.role === 'admin' && live ? <Text style={[styles.tag, styles.tagRole]}>{i18n.t('members.admin')}</Text> : null}
                 {!account ? <Text style={styles.tag}>{i18n.t('members.guest')}</Text> : null}
@@ -160,18 +183,16 @@ export function MembersTab({ group, balances, names, meId }: Props) {
 
       <ActionSheet
         visible={!!linkFrom}
-        title={i18n.t('members.linkTitle', { name: linkFrom?.name ?? '' })}
+        title={i18n.t('members.linkTitle', { name: linkFrom ? (names[linkFrom.id] ?? linkFrom.name) : '' })}
         subtitle={i18n.t('members.linkBody')}
-        options={group.members
-          .filter((m) => !m.gone && m.id !== linkFrom?.id)
-          .map((m) => ({ key: m.id, icon: m.account ? 'person' : 'person-outline', title: m.name }))}
+        options={linkTargets.map((m) => ({ key: m.id, icon: 'person', title: names[m.id] ?? m.name }))}
         onPick={(intoId) => {
           const from = linkFrom;
           setLinkFrom(null);
           if (!from) return;
           void act(async () => {
             await linkGuest(group.id, from.id, intoId);
-            showNote(i18n.t('members.linked', { guest: from.name, name: names[intoId] ?? '' }));
+            showNote(i18n.t('members.linked', { guest: names[from.id] ?? from.name, name: names[intoId] ?? '' }));
           });
         }}
         onClose={() => setLinkFrom(null)}
@@ -183,8 +204,24 @@ export function MembersTab({ group, balances, names, meId }: Props) {
 const useStyles = makeStyles((c) => ({
   gap: { marginLeft: spacing(3) },
   pressed: { opacity: 0.85 },
+  flex: { flex: 1 },
+  searchRow: { flexDirection: 'row', alignItems: 'center', gap: spacing(2) },
+  // As tall as the search bar, with the same space under it.
+  inviteBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: c.surface,
+    borderWidth: 1,
+    borderColor: c.border,
+    marginBottom: spacing(3),
+  },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing(1.5), flexWrap: 'wrap' },
   name: { flexShrink: 1 },
+  // WhatsApp style: someone with an account whose name you haven't saved.
+  unsaved: { color: c.unsaved },
   tag: {
     fontSize: font.xs - 1,
     fontWeight: '700',
