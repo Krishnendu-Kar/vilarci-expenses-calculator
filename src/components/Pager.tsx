@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Platform, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { Easing, interpolate, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
+import { useAfterPaint } from './useAfterPaint';
 
 interface Props {
   /** Which page is showing. */
@@ -15,6 +16,11 @@ interface Props {
    * shows in the gap and grows, and letting go far enough calls `onPull`.
    */
   pullStart?: { hint: React.ReactNode; onPull: () => void };
+  /**
+   * Build only the showing page at first and the rest once it's on screen,
+   * so a screen with heavy pages opens quickly.
+   */
+  lazy?: boolean;
 }
 
 const SLIDE = { duration: 260, easing: Easing.out(Easing.cubic) };
@@ -35,11 +41,16 @@ const HINT_SIZE = 56;
  * smooth even while React is busy. Every page stays mounted, which keeps
  * each tab's scroll position and means nothing renders mid-swipe.
  */
-export function Pager({ index, onIndexChange, children, pullStart }: Props) {
+export function Pager({ index, onIndexChange, children, pullStart, lazy }: Props) {
   const pages = React.Children.toArray(children);
   const count = pages.length;
   const window = useWindowDimensions();
   const [width, setWidth] = useState(window.width);
+  const painted = useAfterPaint();
+  // Pages built so far (lazy): the first one shown, and any tapped to before the rest come.
+  const [built, setBuilt] = useState(() => new Set([index]));
+  if (lazy && !painted && !built.has(index)) setBuilt(new Set(built).add(index));
+  const shows = (i: number) => !lazy || painted || built.has(i);
 
   const x = useSharedValue(-index * width);
   const w = useSharedValue(width);
@@ -116,7 +127,7 @@ export function Pager({ index, onIndexChange, children, pullStart }: Props) {
         <Animated.View style={[styles.row, { width: width * count }, rowStyle]}>
           {pages.map((page, i) => (
             <View key={i} style={{ width }}>
-              {page}
+              {shows(i) ? page : null}
             </View>
           ))}
         </Animated.View>
@@ -131,7 +142,9 @@ export function Pager({ index, onIndexChange, children, pullStart }: Props) {
 }
 
 const styles = StyleSheet.create({
-  clip: { flex: 1, overflow: 'hidden' },
+  // On the web, `hidden` can still be scrolled by the browser (focus moving
+  // to a page out of view shifts the whole row); `clip` can't.
+  clip: { flex: 1, overflow: (Platform.OS === 'web' ? 'clip' : 'hidden') as 'hidden' },
   row: { flex: 1, flexDirection: 'row' },
   hint: { position: 'absolute', top: 0, bottom: 0, left: 0, width: HINT_SIZE, alignItems: 'center', justifyContent: 'center' },
 });

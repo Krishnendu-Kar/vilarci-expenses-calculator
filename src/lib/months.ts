@@ -1,5 +1,6 @@
 import type { CategoryKey, Expense, Group, Recurring } from '../types';
 import { toISODate } from './format';
+import { uuid5 } from './uuid5';
 
 // Months: the Expenses list and Stats can show one month at a time (hostel
 // groups open on this month), an expense can count for another month than
@@ -102,14 +103,23 @@ export function recurringFrom(e: Expense, id: string, now = Date.now()): Recurri
 /** Months a repeat catches up in one go, so a bad saved month can't flood the group. */
 const MAX_CATCH_UP = 36;
 
+const REPEAT_IDS = '6c1f3a52-8e0d-4b7a-9d25-3f4e8a1c7b90';
+
+/**
+ * The id of the expense a repeat adds for a month. The same on every phone,
+ * so in a live group two phones adding March's rent make one expense.
+ */
+export const repeatExpenseId = (recurringId: string, m: Month) => uuid5(`${recurringId}/${m}`, REPEAT_IDS);
+
 /**
  * Adds every repeat that has come due (one expense per month, on its day)
  * up to today. Returns the same group when nothing was due.
  */
-export function applyRecurring(group: Group, now: Date, newId: () => string): Group {
+export function applyRecurring(group: Group, now: Date): Group {
   if (group.kind !== 'hostel' || !group.recurring?.length) return group;
   const today = toISODate(now);
   const current = monthOf(today);
+  const have = new Set(group.expenses.map((e) => e.id));
   const added: Expense[] = [];
   let changed = false;
   const recurring = group.recurring.map((r) => {
@@ -117,8 +127,12 @@ export function applyRecurring(group: Group, now: Date, newId: () => string): Gr
     for (let i = 0, m = addMonths(last, 1); m <= current && i < MAX_CATCH_UP; i++, m = addMonths(m, 1)) {
       const date = dueDate(m, r.day);
       if (date > today) break;
+      last = m;
+      // Already here: another phone added it and it came down with a sync.
+      const id = repeatExpenseId(r.id, m);
+      if (have.has(id)) continue;
       added.push({
-        id: newId(),
+        id,
         title: r.title,
         amount: r.amount,
         category: r.category,
@@ -131,7 +145,6 @@ export function applyRecurring(group: Group, now: Date, newId: () => string): Gr
         recurringId: r.id,
         createdAt: now.getTime() + added.length,
       });
-      last = m;
     }
     if (last === r.lastMonth) return r;
     changed = true;

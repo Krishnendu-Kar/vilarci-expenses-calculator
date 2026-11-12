@@ -82,19 +82,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!user || !dataReady || syncedFor === user.id) return;
     let cancelled = false;
     (async () => {
-      const server = await fetchAccountProfile();
+      const server = await fetchAccountProfile(user.id);
       const mine = local.current;
-      const empty = !mine.name.trim() && mine.upiIds.length === 0;
-      if (empty && server) {
-        if (server.name) setProfileName(server.name);
-        if (server.upiIds.length) setUpiIds(server.upiIds);
-        saved.current = keyOf(server.name, server.upiIds);
-      } else {
-        if (!server || server.name !== mine.name.trim() || !sameIds(server.upiIds, mine.upiIds)) {
-          await saveAccountProfile({ name: mine.name.trim(), upiIds: mine.upiIds });
-        }
-        saved.current = keyOf(mine.name, mine.upiIds);
+      // Field by field: what this phone has wins, but an empty name or UPI
+      // list takes the account's (a name typed here must not wipe the UPI ids
+      // saved from another phone).
+      const name = mine.name.trim() || server?.name || '';
+      const ids = mine.upiIds.length ? mine.upiIds : (server?.upiIds ?? []);
+      if (name !== mine.name.trim()) setProfileName(name);
+      if (!sameIds(ids, mine.upiIds)) setUpiIds(ids);
+      if (!server || server.name !== name || !sameIds(server.upiIds, ids)) {
+        await saveAccountProfile({ name, upiIds: ids });
       }
+      saved.current = keyOf(name, ids);
       if (!cancelled) setSyncedFor(user.id);
     })().catch((e) => console.warn('Could not sync the account profile', e));
     return () => {

@@ -7,12 +7,16 @@ import { DISPLAY_FONT } from '../components/LuxeCard';
 import { ActionSheet, type SheetOption } from '../components/ActionSheet';
 import { Pager } from '../components/Pager';
 import { PrimaryButton } from '../components/PrimaryButton';
+import { MoreButton } from '../components/MoreButton';
+import { useAfterPaint } from '../components/useAfterPaint';
 import { useGroup, useGroups } from '../context/GroupsContext';
 import { useLock } from '../context/LockContext';
+import { useMenu, type MenuItem } from '../context/MenuContext';
 import { computeBalances, groupTotal, suggestTransfers } from '../lib/split';
 import { addMonths, filterGroup, firstMonthOf, lastPickableMonth, NO_FILTER, thisMonth, type ExpenseFilter } from '../lib/months';
 import { resolveMe } from '../lib/people';
 import { isArchived } from '../lib/groupFilters';
+import { can } from '../lib/permissions';
 import { money } from '../lib/money';
 import { monthLabel } from '../lib/format';
 import { buildHtmlReport, buildTextReport } from '../lib/report';
@@ -27,6 +31,11 @@ import { MembersTab } from './group/MembersTab';
 import { SettleTab } from './group/SettleTab';
 import { StatsTab } from './group/StatsTab';
 import { FilterSheet } from './group/FilterSheet';
+import { useGroupExit } from './group/useGroupExit';
+import { useUnreadActivity } from './group/activitySeen';
+import { useIsFocused } from '@react-navigation/native';
+import { useAuth } from '../context/AuthContext';
+import { useSync } from '../context/SyncContext';
 import type { ScreenProps } from '../navigation/types';
 
 type Tab = 'expenses' | 'members' | 'settle' | 'stats';
@@ -52,6 +61,14 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
   );
   const [filterOpen, setFilterOpen] = useState(false);
   const { isOpen, open } = useLock();
+  const { openMenu } = useMenu();
+  const exit = useGroupExit(group);
+  const { user } = useAuth();
+  const focused = useIsFocused();
+  const unread = useUnreadActivity(group, user?.id ?? null, focused);
+  const { state: syncState, waiting, syncNow } = useSync();
+  // Changes of this group not uploaded yet (onlinedb.md §9.8): shown until they're up.
+  const unsent = group?.online ? (waiting[group.id] ?? 0) : 0;
   const closed = !!group && !isOpen(group.id);
   const unlock = useCallback(
     () => open(route.params.groupId, t('lock.promptOpen', { name: group?.name ?? '' })),
@@ -65,34 +82,90 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Feeds the home screen's "Most visited" filter.
-  useEffect(() => {
-    recordVisit(route.params.groupId);
-  }, [recordVisit, route.params.groupId]);
+  // Feeds the home screen's "Most visited" filter. Counted on leaving: counting
+  // on opening redraws every screen behind this one just as it should appear.
+  useEffect(() => () => recordVisit(route.params.groupId), [recordVisit, route.params.groupId]);
 
+  // One ⋮ in the header holds the group's actions, each only when you may use it.
   useLayoutEffect(() => {
+    if (!group || closed) {
+      navigation.setOptions({ title: group?.name ?? '', headerRight: () => null });
+      return;
+    }
+    const items: MenuItem[] = [
+      ...(can('edit_info', group) || can('add_guests', group)
+        ? [{ key: 'edit', icon: 'create-outline' as const, title: t('groupForm.editTitle') }]
+        : []),
+      // A live group: its link, QR and code (requests too, for admins).
+      ...(group.online && can('share_invite', group)
+        ? [{ key: 'link', icon: 'link-outline' as const, title: t('detail.shareLink') }]
+        : []),
+      { key: 'report', icon: 'share-social-outline', title: t('detail.shareReport') },
+      ...(group.online && can('change_settings', group)
+        ? [{ key: 'access', icon: 'shield-checkmark-outline' as const, title: t('detail.manageAccess') }]
+        : []),
+      // Live and still in it: leave; admins also delete for everyone, or restore within 30 days.
+      ...(group.online?.deletedAt != null && can('delete_group', group)
+        ? [{ key: 'restore', icon: 'refresh-outline' as const, title: t('exit.restore') }]
+        : []),
+      ...(group.online?.status === 'active' && group.online.deletedAt == null && can('delete_group', group)
+        ? [{ key: 'delete', icon: 'trash-outline' as const, title: t('exit.delete'), danger: true }]
+        : []),
+      ...(group.online?.status === 'active' && can('leave', group)
+        ? [{ key: 'leave', icon: 'exit-outline' as const, title: t('exit.leave'), danger: true }]
+        : []),
+    ];
+    const pick = (key: string) => {
+      if (key === 'edit') navigation.navigate('GroupForm', { groupId: group.id });
+      else if (key === 'link') navigation.navigate('Invite', { groupId: group.id });
+      else if (key === 'report') setSheetOpen(true);
+      else if (key === 'access') navigation.navigate('GroupSettings', { groupId: group.id });
+      else if (key === 'leave') exit.leave();
+      else if (key === 'delete') exit.deleteForEveryone();
+      else if (key === 'restore') exit.restore();
+    };
     navigation.setOptions({
-      title: group?.name ?? '',
-      headerRight: () =>
-        group && !closed ? (
-          <View style={styles.headerIcons}>
-            <Pressable onPress={() => setSheetOpen(true)} hitSlop={10} accessibilityLabel={t('detail.share')}>
-              <Ionicons name="share-social-outline" size={22} color={colors.white} />
-            </Pressable>
+      title: group.name,
+      headerRight: () => (
+        <View style={styles.headerActions}>
+          {/* Changes waiting to go up: tap to try now. Nothing shows when all is up. */}
+          {unsent ? (
             <Pressable
-              onPress={() => navigation.navigate('GroupForm', { groupId: group.id })}
+              onPress={() => void syncNow()}
               hitSlop={10}
-              accessibilityLabel={t('groupForm.editTitle')}
+              accessibilityRole="button"
+              accessibilityLabel={t('sync.waiting', { count: unsent })}
             >
-              <Ionicons name="create-outline" size={22} color={colors.white} />
+              <Ionicons
+                name={syncState === 'syncing' ? 'sync-outline' : syncState === 'failed' ? 'cloud-offline-outline' : 'cloud-upload-outline'}
+                size={20}
+                color={colors.white}
+              />
             </Pressable>
-          </View>
-        ) : null,
+          ) : null}
+          {/* A live group: its Activity, every change with who and when; a dot when someone else changed something. */}
+          {group.online ? (
+            <Pressable
+              onPress={() => navigation.navigate('Activity', { groupId: group.id })}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel={unread ? t('activity.unread') : t('activity.title')}
+            >
+              <Ionicons name="notifications-outline" size={21} color={colors.white} />
+              {unread ? <View style={styles.dot} /> : null}
+            </Pressable>
+          ) : null}
+          <MoreButton size={22} color={colors.white} hitSlop={12} onOpen={(anchor) => openMenu(anchor, items, pick)} />
+        </View>
+      ),
     });
-  }, [navigation, group, closed, colors, styles, t]);
+  }, [navigation, group, closed, colors, styles, t, openMenu, exit, unread, unsent, syncState, syncNow]);
 
-  const view = useMemo(() => (group ? filterGroup(group, filter) : group), [group, filter]);
-  const balances = useMemo(() => (group ? computeBalances(group) : []), [group]);
+  // The page shows first (header, name, tabs) and works out the numbers
+  // straight after, so opening a group never waits for the maths.
+  const ready = useAfterPaint();
+  const view = useMemo(() => (group && ready ? filterGroup(group, filter) : group), [group, filter, ready]);
+  const balances = useMemo(() => (group && ready ? computeBalances(group) : []), [group, ready]);
   // Stats' "who paid" reads paid/share of the filtered expenses only.
   const viewBalances = useMemo(() => (view && view !== group ? computeBalances(view) : balances), [view, group, balances]);
   const transfers = useMemo(() => suggestTransfers(balances), [balances]);
@@ -121,9 +194,21 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
   }
 
   const names = Object.fromEntries(group.members.map((m) => [m.id, m.name]));
-  const total = groupTotal(view);
+  const total = ready ? groupTotal(view) : 0;
   const meId = resolveMe(group, profile, meMap[group.id]);
   const archived = isArchived(prefs[group.id]);
+  // A live group you can only read now, and why.
+  const readOnly = group.online
+    ? group.online.status === 'left'
+      ? t('exit.bannerLeft')
+      : group.online.status === 'removed'
+        ? t('exit.bannerRemoved')
+        : group.online.status === 'gone'
+          ? t('exit.bannerGone')
+          : group.online.deletedAt != null
+            ? t('exit.bannerDeleted')
+            : null
+    : null;
   const totalLabel = filter.month
     ? t(filter.categories.length ? 'detail.spentInFiltered' : 'detail.spentIn', { month: monthLabel(filter.month) })
     : filter.categories.length
@@ -187,10 +272,11 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
               <MonthStep icon="chevron-forward" label={t('detail.nextMonth')} enabled={canAhead} onPress={() => stepMonth(1)} />
             ) : null}
           </View>
-          <Text style={styles.totalValue} numberOfLines={1} adjustsFontSizeToFit>
+          {/* Same height before the numbers are in, so nothing jumps. */}
+          <Text style={[styles.totalValue, !ready && styles.waiting]} numberOfLines={1} adjustsFontSizeToFit>
             {money(total)}
           </Text>
-          <Text style={styles.totalSub} numberOfLines={1}>
+          <Text style={[styles.totalSub, !ready && styles.waiting]} numberOfLines={1}>
             {t('detail.perPerson', { amount: money(Math.round(total / group.members.length)) })} · {t('count.person', { count: group.members.length })}
           </Text>
         </View>
@@ -214,6 +300,12 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
           })}
         </View>
       </View>
+      {readOnly ? (
+        <View style={styles.archived}>
+          <Ionicons name="eye-outline" size={16} color={colors.textSecondary} />
+          <Text style={styles.archivedText}>{readOnly}</Text>
+        </View>
+      ) : null}
       {archived ? (
         <View style={styles.archived}>
           <Ionicons name="archive-outline" size={16} color={colors.textSecondary} />
@@ -224,24 +316,28 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
         </View>
       ) : null}
 
-      {/* Same order as TABS. */}
-      <Pager index={TABS.indexOf(tab)} onIndexChange={onPage}>
-        <ExpensesTab
-          group={group}
-          shown={view.expenses}
-          filter={filter}
-          onFilter={setFilter}
-          onOpenFilter={() => setFilterOpen(true)}
-          onRecurring={() => navigation.navigate('Recurring', { groupId: group.id })}
-          names={names}
-          onOpen={(e) => navigation.navigate('ExpenseForm', { groupId: group.id, expenseId: e.id })}
-        />
-        <MembersTab balances={balances} names={names} meId={meId} />
-        <SettleTab group={group} transfers={transfers} names={names} meId={meId} onShare={() => setSheetOpen(true)} />
-        <StatsTab group={view} balances={viewBalances} names={names} filter={filter} onFilter={setFilter} />
-      </Pager>
+      {/* Same order as TABS. Built once the page is on screen. */}
+      {ready ? (
+        <Pager index={TABS.indexOf(tab)} onIndexChange={onPage} lazy>
+          <ExpensesTab
+            group={group}
+            shown={view.expenses}
+            filter={filter}
+            onFilter={setFilter}
+            onOpenFilter={() => setFilterOpen(true)}
+            onRecurring={() => navigation.navigate('Recurring', { groupId: group.id })}
+            names={names}
+            onOpen={(e) => navigation.navigate('ExpenseForm', { groupId: group.id, expenseId: e.id })}
+          />
+          <MembersTab group={group} balances={balances} names={names} meId={meId} />
+          <SettleTab group={group} transfers={transfers} names={names} meId={meId} onShare={() => setSheetOpen(true)} />
+          <StatsTab group={view} balances={viewBalances} names={names} filter={filter} onFilter={setFilter} />
+        </Pager>
+      ) : (
+        <View style={styles.flex} />
+      )}
 
-      {tab === 'expenses' ? (
+      {tab === 'expenses' && can('edit_expenses', group) ? (
         <Fab label={t('detail.addExpense')} onPress={() => navigation.navigate('ExpenseForm', { groupId: group.id })} />
       ) : null}
 
@@ -290,6 +386,19 @@ function MonthStep({
 
 const useStyles = makeStyles((c) => ({
   missing: { textAlign: 'center', marginTop: spacing(16), color: c.textSecondary },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing(4) },
+  // The Activity bell's unread dot: the brand's gold on the maroon header.
+  dot: {
+    position: 'absolute',
+    top: -1,
+    right: -1,
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: c.accent,
+    borderWidth: 1.5,
+    borderColor: c.header,
+  },
   locked: { alignItems: 'center', paddingTop: spacing(20), paddingHorizontal: spacing(8) },
   lockIcon: {
     width: 72,
@@ -303,7 +412,6 @@ const useStyles = makeStyles((c) => ({
   lockedTitle: { fontSize: font.xl, fontWeight: '800', color: c.textPrimary, textAlign: 'center' },
   lockedBody: { fontSize: font.md, color: c.textSecondary, textAlign: 'center', marginTop: spacing(2), lineHeight: 21 },
   unlockBtn: { alignSelf: 'stretch', marginTop: spacing(6) },
-  headerIcons: { flexDirection: 'row', gap: spacing(5), alignItems: 'center' },
   // Same colour as the header bar above it, so the two read as one piece.
   hero: { backgroundColor: c.header, paddingHorizontal: spacing(5) },
   total: { alignItems: 'center', paddingTop: spacing(3), paddingBottom: spacing(4) },
@@ -321,6 +429,8 @@ const useStyles = makeStyles((c) => ({
   stepPressed: { backgroundColor: 'rgba(255,255,255,0.26)' },
   totalValue: { color: c.white, fontFamily: DISPLAY_FONT, fontSize: 40, lineHeight: 46, marginVertical: 2 },
   totalSub: { color: c.white, opacity: 0.75, fontSize: font.sm },
+  waiting: { opacity: 0 },
+  flex: { flex: 1 },
   tabs: { flexDirection: 'row', justifyContent: 'space-between' },
   tab: { alignItems: 'center', paddingHorizontal: spacing(1) },
   tabText: { color: c.white, opacity: 0.65, fontSize: font.md, fontWeight: '600', paddingTop: spacing(2), paddingBottom: spacing(2.5) },

@@ -172,3 +172,9 @@ onlinedb.md
 
 # Supabase server code: Edge Functions + DB migrations (local only)
 /supabase/
+
+# Full app workflow explained (local only)
+WORKFLOW.md
+
+# Play Console answers and release checklist (local only)
+PLAY_CONSOLE.md

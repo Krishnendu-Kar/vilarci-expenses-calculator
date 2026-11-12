@@ -1,4 +1,5 @@
-import type { CategoryKey, Expense, Group, GroupKind, Payment, Recurring, SplitMode } from '../../types';
+import type { CategoryKey, Expense, Group, GroupKind, Member, OnlineInfo, Payment, Recurring, SplitMode } from '../../types';
+import { monthOf, repeatExpenseId } from '../months';
 
 // Groups ↔ table rows. The app keeps whole groups in memory and changes them
 // without mutating (a changed expense is a new object, an untouched one is
@@ -20,7 +21,18 @@ export interface Saved {
 
 const COLUMNS = {
   groups: ['id', 'name', 'kind', 'created_at', 'updated_at', 'binned_at'],
-  members: ['group_id', 'person_id', 'name', 'pos'],
+  // The cursor is left out: only a sync moves it (setCursor in store.ts).
+  online_groups: [
+    'group_id',
+    'role',
+    'status',
+    'edit_info',
+    'add_expenses',
+    'add_guests',
+    'require_approval',
+    'deleted_at',
+  ],
+  members: ['group_id', 'person_id', 'name', 'pos', 'role', 'account', 'gone'],
   expenses: [
     'group_id',
     'id',
@@ -41,9 +53,13 @@ const COLUMNS = {
   splits: ['group_id', 'parent_id', 'person_id', 'pos', 'value'],
   payments: ['group_id', 'id', 'from_id', 'to_id', 'amount', 'created_at'],
   closed_months: ['group_id', 'month'],
+  outbox: ['tbl', 'group_id', 'row_id', 'op', 'updated_at'],
 } as const;
 
 type Table = keyof typeof COLUMNS;
+
+/** What an outbox line points at: the server's table names. */
+export type SyncTable = 'groups' | 'members' | 'expenses' | 'payments' | 'recurring';
 
 /** Insert order: groups before the rows that point at them. */
 const TABLES = Object.keys(COLUMNS) as Table[];
@@ -81,16 +97,49 @@ function deleteIn(table: string, column: string, values: string[], groupId?: str
   return out;
 }
 
-// A group's own row never uses INSERT OR REPLACE: replacing it would delete
-// everything that belongs to it.
-const UPSERT_GROUP = ` ON CONFLICT(id) DO UPDATE SET ${COLUMNS.groups
-  .slice(1)
-  .map((c) => `${c} = excluded.${c}`)
-  .join(', ')}`;
+const updateAll = (key: string, columns: readonly string[]) =>
+  ` ON CONFLICT(${key}) DO UPDATE SET ${columns
+    .slice(1)
+    .map((c) => `${c} = excluded.${c}`)
+    .join(', ')}`;
+
+const TAILS: Partial<Record<Table, string>> = {
+  // A group's own row never uses INSERT OR REPLACE: replacing it would delete
+  // everything that belongs to it. Its online row keeps its cursor.
+  groups: updateAll('id', COLUMNS.groups),
+  online_groups: updateAll('group_id', COLUMNS.online_groups),
+  // A second change to the same item replaces the first; the later time stays
+  // (a repeat adding this month must not hide a real edit waiting to go).
+  outbox:
+    ' ON CONFLICT(tbl, group_id, row_id) DO UPDATE SET op = excluded.op,' +
+    ' updated_at = max(outbox.updated_at, excluded.updated_at), tries = 0, last_error = NULL',
+};
+
+/** When the outbox lines of one save were made, in server time. */
+export interface OutboxStamp {
+  now: number;
+}
+
+// The fixed time of an expense a repeat added: the same on every phone, and
+// older than any real edit or delete of it (§9.5).
+const repeatTime = (e: Expense) =>
+  e.recurringId && e.id === repeatExpenseId(e.recurringId, monthOf(e.date))
+    ? Date.UTC(Number(e.date.slice(0, 4)), Number(e.date.slice(5, 7)) - 1, Number(e.date.slice(8, 10)))
+    : null;
+
+// A repeat whose only change is the month it reached: moved on by this phone
+// adding the month's expense, not edited. Sent as time 0, so it never wins
+// over a real edit; the server still keeps the later month.
+const monthOnly = (before: Recurring, after: Recurring) =>
+  JSON.stringify({ ...before, lastMonth: '' }) === JSON.stringify({ ...after, lastMonth: '' });
 
 class Writer {
   deletes: Statement[] = [];
   rows = Object.fromEntries(TABLES.map((t) => [t, [] as SQLValue[][]])) as Record<Table, SQLValue[][]>;
+
+  queue(table: SyncTable, groupId: string, rowId: string, op: 'upsert' | 'delete', at: number) {
+    this.rows.outbox.push([table, groupId, rowId, op, at]);
+  }
 
   money(groupId: string, e: Expense | Recurring) {
     Object.entries(e.payers).forEach(([person, amount], i) => this.rows.payers.push([groupId, e.id, person, amount, i]));
@@ -127,13 +176,17 @@ class Writer {
     this.rows.payments.push([groupId, p.id, p.from, p.to, p.amount, p.createdAt]);
   }
 
-  /** Only the expenses (or payments, repeats) that were added, changed or removed. */
+  /**
+   * Only the expenses (or payments, repeats) that were added, changed or
+   * removed. `queue`, for a live group: also an outbox line for each.
+   */
   list<T extends { id: string }>(
     groupId: string,
     table: 'expenses' | 'recurring' | 'payments',
     before: T[] | undefined,
     after: T[] | undefined,
     write: (item: T) => void,
+    queue?: (item: T | null, was: T | undefined, id: string) => void,
   ) {
     if (before === after) return;
     const old = new Map((before ?? []).map((x) => [x.id, x]));
@@ -145,9 +198,11 @@ class Writer {
       if (was === item) continue;
       if (was) changed.push(item.id);
       write(item);
+      queue?.(item, was, item.id);
     }
     const removed = [...old.keys()].filter((id) => !now.has(id));
     if (removed.length) this.deletes.push(...deleteIn(table, 'id', removed, groupId));
+    removed.forEach((id) => queue?.(null, old.get(id), id));
     // Who paid and the splits are written again in full for a changed item.
     if (table !== 'payments') {
       const stale = [...changed, ...removed];
@@ -157,18 +212,35 @@ class Writer {
     }
   }
 
+  online(g: Group) {
+    const o = g.online!;
+    this.rows.online_groups.push([
+      g.id,
+      o.role,
+      o.status,
+      o.settings.editInfo,
+      o.settings.addExpenses,
+      o.settings.addGuests,
+      o.settings.requireApproval ? 1 : 0,
+      o.deletedAt ?? null,
+    ]);
+  }
+
   statements(): Statement[] {
     return [
       ...this.deletes,
-      ...TABLES.flatMap((t) =>
-        this.rows[t].length ? insertRows(t, COLUMNS[t], this.rows[t], t === 'groups' ? UPSERT_GROUP : '') : [],
-      ),
+      ...TABLES.flatMap((t) => (this.rows[t].length ? insertRows(t, COLUMNS[t], this.rows[t], TAILS[t] ?? '') : [])),
     ];
   }
 }
 
-/** The statements that turn the saved state `before` into `after`. */
-export function planGroups(before: Map<string, Saved>, after: Saved[]): Statement[] {
+/**
+ * The statements that turn the saved state `before` into `after`. With
+ * `stamp`, changes to live groups also go in the outbox, in the same
+ * transaction (onlinedb.md §9.1). Without it (changes that came from the
+ * server) nothing is queued, so nothing is sent back.
+ */
+export function planGroups(before: Map<string, Saved>, after: Saved[], stamp?: OutboxStamp): Statement[] {
   const w = new Writer();
   const kept = new Set<string>();
   for (const { group: g, binnedAt } of after) {
@@ -177,17 +249,60 @@ export function planGroups(before: Map<string, Saved>, after: Saved[]): Statemen
     if (was && was.group === g && was.binnedAt === binnedAt) continue;
     const old = was?.group;
     w.rows.groups.push([g.id, g.name, g.kind, g.createdAt, g.updatedAt, binnedAt]);
+    if (g.online && old?.online !== g.online) w.online(g);
+    if (!g.online && old?.online) w.deletes.push({ sql: 'DELETE FROM online_groups WHERE group_id = ?', params: [g.id] });
     if (!old || old.members !== g.members) {
       if (old) w.deletes.push({ sql: 'DELETE FROM members WHERE group_id = ?', params: [g.id] });
-      g.members.forEach((m, i) => w.rows.members.push([g.id, m.id, m.name, i]));
+      g.members.forEach((m, i) =>
+        w.rows.members.push([g.id, m.id, m.name, i, m.role ?? null, m.account ? 1 : 0, m.gone ?? null]),
+      );
     }
     if (!old || old.closedMonths !== g.closedMonths) {
       if (old) w.deletes.push({ sql: 'DELETE FROM closed_months WHERE group_id = ?', params: [g.id] });
       (g.closedMonths ?? []).forEach((m) => w.rows.closed_months.push([g.id, m]));
     }
-    w.list(g.id, 'expenses', old?.expenses, g.expenses, (e) => w.expense(g.id, e));
-    w.list(g.id, 'payments', old?.payments, g.payments, (p) => w.payment(g.id, p));
-    w.list(g.id, 'recurring', old?.recurring, g.recurring, (r) => w.recurring(g.id, r));
+
+    // Only a group that was already live: putting one online uploads it whole.
+    const live = stamp && old?.online && g.online?.status === 'active' ? stamp.now : null;
+    const op = (item: unknown) => (item ? 'upsert' : 'delete');
+    w.list(
+      g.id,
+      'expenses',
+      old?.expenses,
+      g.expenses,
+      (e) => w.expense(g.id, e),
+      live === null
+        ? undefined
+        : (e, was, id) => w.queue('expenses', g.id, id, op(e), (e && !was && repeatTime(e)) || live),
+    );
+    w.list(
+      g.id,
+      'payments',
+      old?.payments,
+      g.payments,
+      (p) => w.payment(g.id, p),
+      live === null ? undefined : (p, _was, id) => w.queue('payments', g.id, id, op(p), live),
+    );
+    w.list(
+      g.id,
+      'recurring',
+      old?.recurring,
+      g.recurring,
+      (r) => w.recurring(g.id, r),
+      live === null
+        ? undefined
+        : (r, was, id) => w.queue('recurring', g.id, id, op(r), r && was && monthOnly(was, r) ? 0 : live),
+    );
+
+    if (live !== null && old) {
+      if (old.name !== g.name || old.kind !== g.kind) w.queue('groups', g.id, g.id, 'upsert', live);
+      // Guests added, renamed or moved. Leaving and removing aren't changes a phone uploads.
+      const oldPos = new Map(old.members.map((m, i) => [m.id, { m, i }]));
+      g.members.forEach((m, i) => {
+        const o = oldPos.get(m.id);
+        if (!m.account && !m.gone && (!o || o.m.name !== m.name || o.i !== i)) w.queue('members', g.id, m.id, 'upsert', live);
+      });
+    }
   }
   const gone = [...before.keys()].filter((id) => !kept.has(id));
   // Everything in the group goes with it (ON DELETE CASCADE).
@@ -209,6 +324,19 @@ export interface MemberRow {
   group_id: string;
   person_id: string;
   name: string;
+  role: string | null;
+  account: number;
+  gone: string | null;
+}
+export interface OnlineRow {
+  group_id: string;
+  role: string | null;
+  status: string;
+  edit_info: string;
+  add_expenses: string;
+  add_guests: string;
+  require_approval: number;
+  deleted_at: number | null;
 }
 export interface ExpenseRow {
   group_id: string;
@@ -264,6 +392,7 @@ export interface MonthRow {
 
 export interface GroupTables {
   groups: GroupRow[];
+  online_groups: OnlineRow[];
   members: MemberRow[];
   expenses: ExpenseRow[];
   recurring: RecurringRow[];
@@ -276,7 +405,8 @@ export interface GroupTables {
 /** The SELECTs for GroupTables, each in the order the app shows things. */
 export const SELECTS: Record<keyof GroupTables, string> = {
   groups: 'SELECT * FROM groups ORDER BY updated_at DESC',
-  members: 'SELECT group_id, person_id, name FROM members ORDER BY group_id, pos',
+  online_groups: 'SELECT * FROM online_groups',
+  members: 'SELECT group_id, person_id, name, role, account, gone FROM members ORDER BY group_id, pos',
   expenses: 'SELECT * FROM expenses ORDER BY created_at DESC, rowid DESC',
   recurring: 'SELECT * FROM recurring ORDER BY created_at, rowid',
   payers: 'SELECT group_id, parent_id, person_id, amount FROM payers ORDER BY group_id, parent_id, pos',
@@ -297,8 +427,29 @@ const byGroup = <T extends { group_id: string }>(rows: T[]) => {
 
 const key = (groupId: string, parentId: string) => `${groupId}\n${parentId}`;
 
+const memberOf = (m: MemberRow): Member => ({
+  id: m.person_id,
+  name: m.name,
+  ...(m.role !== null ? { role: m.role as Member['role'] } : {}),
+  ...(m.account ? { account: true } : {}),
+  ...(m.gone !== null ? { gone: m.gone as Member['gone'] } : {}),
+});
+
+const onlineOf = (o: OnlineRow): OnlineInfo => ({
+  role: o.role as OnlineInfo['role'],
+  status: o.status as OnlineInfo['status'],
+  settings: {
+    editInfo: o.edit_info as 'all' | 'admins',
+    addExpenses: o.add_expenses as 'all' | 'admins',
+    addGuests: o.add_guests as 'all' | 'admins',
+    requireApproval: o.require_approval === 1,
+  },
+  ...(o.deleted_at !== null ? { deletedAt: o.deleted_at } : {}),
+});
+
 /** Whole groups again, from their rows. */
 export function assembleGroups(t: GroupTables): Saved[] {
+  const online = new Map(t.online_groups.map((o) => [o.group_id, o]));
   const members = byGroup(t.members);
   const expenses = byGroup(t.expenses);
   const recurring = byGroup(t.recurring);
@@ -344,13 +495,14 @@ export function assembleGroups(t: GroupTables): Saved[] {
         createdAt: r.created_at,
       }),
     );
+    const o = online.get(g.id);
     return {
       binnedAt: g.binned_at,
       group: {
         id: g.id,
         name: g.name,
         kind: g.kind as GroupKind,
-        members: (members.get(g.id) ?? []).map((m) => ({ id: m.person_id, name: m.name })),
+        members: (members.get(g.id) ?? []).map(memberOf),
         expenses: (expenses.get(g.id) ?? []).map(
           (e): Expense => ({
             id: e.id,
@@ -373,6 +525,7 @@ export function assembleGroups(t: GroupTables): Saved[] {
         // Only present when used, like groups saved before.
         ...(closedMonths.length ? { closedMonths } : {}),
         ...(reps.length ? { recurring: reps } : {}),
+        ...(o ? { online: onlineOf(o) } : {}),
         createdAt: g.created_at,
         updatedAt: g.updated_at,
       },

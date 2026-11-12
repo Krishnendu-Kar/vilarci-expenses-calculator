@@ -11,6 +11,7 @@ import {
   saveProfile,
   saveUpiIds,
   saveVisits,
+  adoptRemote,
   type MeMap,
 } from '../lib/storage';
 import {
@@ -26,11 +27,20 @@ import {
   type GroupPrefs,
   type Visits,
 } from '../lib/groupFilters';
-import { applyMembers, reconcilePeople, renameInGroups } from '../lib/people';
+import { adoptAccountId, applyMembers, reconcilePeople, renameInGroups } from '../lib/people';
 import { applyRecurring, setRecurring, withRepeat } from '../lib/months';
 import { newId } from '../lib/id';
 import { mergeGroups } from '../lib/backup';
 import { purgeBin, type BinItem } from '../lib/bin';
+import { can, type Action } from '../lib/permissions';
+import { rebase } from '../lib/sync/merge';
+import { remapGroup } from '../lib/legacyIds';
+
+/**
+ * Monthly repeats come due on their own. In a live group only someone who
+ * may add expenses adds them; the server would refuse them for anyone else.
+ */
+const repeatsDue = (g: Group, now: Date) => (can('edit_expenses', g) ? applyRecurring(g, now) : g);
 
 interface GroupInput {
   name: string;
@@ -95,6 +105,23 @@ interface GroupsContextValue {
   /** Who "me" is in each group, when picked by hand. */
   meMap: MeMap;
   setMe: (groupId: string, memberId: string) => void;
+  /** Live groups: what a sync changed, put on screen keeping edits made meanwhile. */
+  applySync: (touched: Map<string, { base: Group; next: Group }>) => void;
+  /**
+   * Signed in: the person who is you takes your account id in your local
+   * groups (onlinedb.md §11.4). Returns the groups as they are now.
+   */
+  adoptAccount: (accountId: string, personId: string) => Group[];
+  /** A group the server now has, saved as it has it. `uploaded`: the version that went up. */
+  markOnline: (uploaded: Group, live: Group, cursor: number) => Promise<void>;
+  /** A local group under a new id (a copy of it is already online). Returns it. */
+  giveNewId: (groupId: string) => Group | undefined;
+  /** Takes groups off this phone only (live groups, after logging out). */
+  dropGroups: (ids: string[]) => void;
+  /** The groups right now, including changes not rendered yet. */
+  peekGroups: () => Group[];
+  /** Live groups this phone doesn't have yet (signed in on a new phone): saved empty, to download whole. */
+  addLiveGroups: (groups: Group[]) => Promise<void>;
 }
 
 interface Db {
@@ -117,6 +144,10 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
   const [upiIds, setUpiIds] = useState<UpiId[]>([]);
   const profileRef = useRef(profile);
   profileRef.current = profile;
+  const dbRef = useRef(db);
+  dbRef.current = db;
+  const meMapRef = useRef(meMap);
+  meMapRef.current = meMap;
 
   useEffect(() => {
     loadAll()
@@ -126,7 +157,7 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
         const reconciled = reconcilePeople(groups, people);
         // Groups 30 days in the Bin are deleted for good here.
         const bin = purgeBin(storedBin, now.getTime());
-        setDb({ ...reconciled, groups: reconciled.groups.map((g) => applyRecurring(g, now, newId)), bin });
+        setDb({ ...reconciled, groups: reconciled.groups.map((g) => repeatsDue(g, now)), bin });
         setVisits(v);
         // Pins of binned groups are kept, so restoring brings them back.
         setPrefs(prunePrefs(p, [...groups, ...bin.map((b) => b.group)]));
@@ -176,15 +207,20 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
     const run = () =>
       setDb((d) => {
         const now = new Date();
-        const groups = d.groups.map((g) => applyRecurring(g, now, newId));
+        const groups = d.groups.map((g) => repeatsDue(g, now));
         return groups.some((g, i) => g !== d.groups[i]) ? { ...d, groups } : d;
       });
     const sub = AppState.addEventListener('change', (s) => s === 'active' && run());
     return () => sub.remove();
   }, [ready]);
 
-  const editGroup = useCallback((id: string, fn: (g: Group) => Group) => {
-    setDb((d) => ({ ...d, groups: d.groups.map((g) => (g.id === id ? { ...fn(g), updatedAt: Date.now() } : g)) }));
+  // In a live group a change happens only when your role allows it (§9.10):
+  // the app never saves what the server would refuse.
+  const editGroup = useCallback((id: string, fn: (g: Group) => Group, action: Action = 'edit_expenses') => {
+    setDb((d) => ({
+      ...d,
+      groups: d.groups.map((g) => (g.id === id && can(action, g) ? { ...fn(g), updatedAt: Date.now() } : g)),
+    }));
   }, []);
 
   const recordVisit = useCallback((groupId: string) => {
@@ -200,7 +236,20 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
 
   const updateGroup = useCallback((id: string, input: GroupInput) => {
     setDb((d) => {
-      const groups = d.groups.map((g) => (g.id === id ? { ...g, ...input, updatedAt: Date.now() } : g));
+      const groups = d.groups.map((g) => {
+        if (g.id !== id) return g;
+        if (!g.online) return { ...g, ...input, updatedAt: Date.now() };
+        // Live: name and type with "Edit group info", new and renamed guests
+        // with "Add guests"; nobody is removed here (leaving and removing are §17).
+        const guests = can('add_guests', g);
+        const named = new Map(input.members.map((m) => [m.id, m.name]));
+        const members = [
+          ...g.members.map((m) => (guests && !m.account && named.get(m.id) && named.get(m.id) !== m.name ? { ...m, name: named.get(m.id)! } : m)),
+          ...(guests ? input.members.filter((m) => !g.members.some((x) => x.id === m.id)) : []),
+        ];
+        const info = can('edit_info', g) ? { name: input.name, kind: input.kind } : {};
+        return { ...g, ...info, members, updatedAt: Date.now() };
+      });
       return { ...d, ...applyMembers(groups, d.people, input.members) };
     });
   }, []);
@@ -212,7 +261,8 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
     const removed = groupsRef.current.find((g) => g.id === id);
     setDb((d) => {
       const group = d.groups.find((g) => g.id === id);
-      if (!group) return d;
+      // You leave a live group (step 6); its copy goes only once you're out of it.
+      if (!group || group.online?.status === 'active') return d;
       return {
         ...d,
         groups: d.groups.filter((g) => g.id !== id),
@@ -249,7 +299,7 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
         const exists = next.expenses.some((x) => x.id === e.id);
         next = { ...next, expenses: exists ? next.expenses.map((x) => (x.id === e.id ? e : x)) : [e, ...next.expenses] };
         // A repeat started in an earlier month catches up straight away.
-        return applyRecurring(next, new Date(), newId);
+        return repeatsDue(next, new Date());
       }),
     [editGroup],
   );
@@ -284,7 +334,7 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
   const addExpenses = useCallback((groupId: string, expenses: Expense[], newMembers: Member[] = []) => {
     setDb((d) => {
       const groups = d.groups.map((g) =>
-        g.id === groupId
+        g.id === groupId && can('edit_expenses', g) && (!newMembers.length || can('add_guests', g))
           ? {
               ...g,
               members: [...g.members, ...newMembers.filter((m) => !g.members.some((x) => x.id === m.id))],
@@ -347,7 +397,13 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
     setDb((d) => ({
       ...d,
       people: d.people.map((p) => (p.id === personId ? { ...p, name: n } : p)),
-      groups: renameInGroups(d.groups, personId, n),
+      // In a live group only a guest can be renamed (by whoever may add guests);
+      // people with accounts keep the name they gave themselves.
+      groups: d.groups.map((g) =>
+        g.online && (!can('add_guests', g) || g.members.find((m) => m.id === personId)?.account)
+          ? g
+          : renameInGroups([g], personId, n)[0],
+      ),
     }));
     if (profileRef.current.personId === personId) setProfile((p) => ({ ...p, name: n }));
   }, []);
@@ -387,6 +443,88 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
     (groupId: string, memberId: string) => setMeMap((m) => (m[groupId] === memberId ? m : { ...m, [groupId]: memberId })),
     [],
   );
+
+  const applySync = useCallback((touched: Map<string, { base: Group; next: Group }>) => {
+    if (!touched.size) return;
+    setDb((d) => {
+      const groups = d.groups.map((g) => {
+        const t = touched.get(g.id);
+        return t ? rebase(g, t.base, t.next) : g;
+      });
+      // New people in a live group join the People directory.
+      return { ...d, ...reconcilePeople(groups, d.people) };
+    });
+  }, []);
+
+  const adoptAccount = useCallback((accountId: string, personId: string) => {
+    const d = dbRef.current;
+    const s = adoptAccountId(
+      { groups: d.groups, bin: d.bin, people: d.people, meMap: meMapRef.current, profile: profileRef.current },
+      personId,
+      accountId,
+    );
+    const next = { groups: s.groups, bin: s.bin, people: s.people };
+    // Read right away by the caller (put online), before the next render.
+    dbRef.current = next;
+    setDb(next);
+    setMeMap(s.meMap);
+    setProfile(s.profile);
+    return s.groups;
+  }, []);
+
+  const markOnline = useCallback(async (uploaded: Group, live: Group, cursor: number) => {
+    await adoptRemote([live], { [live.id]: cursor });
+    // Changed here while it went up: those changes are saved next, and so
+    // they're queued and go up with the first sync.
+    setDb((d) => ({
+      ...d,
+      groups: d.groups.map((g) =>
+        g.id !== live.id
+          ? g
+          : g === uploaded
+            ? live
+            : { ...g, online: live.online, members: g.members.map((m) => live.members.find((x) => x.id === m.id) ?? m) },
+      ),
+    }));
+  }, []);
+
+  const giveNewId = useCallback((groupId: string) => {
+    const d = dbRef.current;
+    const fresh = newId();
+    const old = d.groups.find((g) => g.id === groupId);
+    if (!old) return undefined;
+    const moved = remapGroup(old, (id) => (id === groupId ? fresh : id));
+    const next = { ...d, groups: d.groups.map((g) => (g.id === groupId ? moved : g)) };
+    dbRef.current = next;
+    setDb(next);
+    const move = <T,>(r: Record<string, T>) => {
+      if (!(groupId in r)) return r;
+      const { [groupId]: v, ...rest } = r;
+      return { ...rest, [fresh]: v };
+    };
+    setMeMap(move);
+    setPrefs(move);
+    setVisits(move);
+    return moved;
+  }, []);
+
+  const peekGroups = useCallback(() => dbRef.current.groups, []);
+
+  const addLiveGroups = useCallback(async (groups: Group[]) => {
+    if (!groups.length) return;
+    // Bookmark 0: the next sync brings everything in them.
+    await adoptRemote(groups, Object.fromEntries(groups.map((g) => [g.id, 0])));
+    setDb((d) => ({ ...d, groups: [...groups.filter((g) => !d.groups.some((x) => x.id === g.id)), ...d.groups] }));
+  }, []);
+
+  const dropGroups = useCallback((ids: string[]) => {
+    if (!ids.length) return;
+    setDb((d) => ({
+      ...d,
+      groups: d.groups.filter((g) => !ids.includes(g.id)),
+      bin: d.bin.filter((b) => !ids.includes(b.group.id)),
+    }));
+  }, []);
 
   const value = useMemo(
     () => ({
@@ -428,6 +566,13 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
       linkProfile,
       meMap,
       setMe,
+      applySync,
+      adoptAccount,
+      markOnline,
+      giveNewId,
+      dropGroups,
+      peekGroups,
+      addLiveGroups,
     }),
     [
       db,
@@ -466,6 +611,13 @@ export function GroupsProvider({ children }: { children: React.ReactNode }) {
       linkProfile,
       meMap,
       setMe,
+      applySync,
+      adoptAccount,
+      markOnline,
+      giveNewId,
+      dropGroups,
+      peekGroups,
+      addLiveGroups,
     ],
   );
 

@@ -7,6 +7,10 @@ import { PrimaryButton } from '../components/PrimaryButton';
 import { SectionLabel } from '../components/SectionLabel';
 import { useGroups } from '../context/GroupsContext';
 import { useOpenGroups } from '../context/LockContext';
+import { useAuth } from '../context/AuthContext';
+import { useUndo } from '../context/UndoContext';
+import * as Clipboard from 'expo-clipboard';
+import { useAccountUpi } from './group/useMemberUpi';
 import { nameTakenIn, netsFor, totals } from '../lib/people';
 import { isSettled } from '../lib/split';
 import { money } from '../lib/money';
@@ -17,14 +21,23 @@ import { useI18n } from '../i18n/I18nContext';
 import { font, radii, spacing } from '../theme/tokens';
 import type { ScreenProps } from '../navigation/types';
 
-/** One person: their groups and balances, rename (everywhere), "this is me". */
+/**
+ * One person: their groups and balances, their UPI ids (accounts), rename
+ * (everywhere). "This is me" only while the app doesn't know who you are.
+ */
 export function PersonScreen({ navigation, route }: ScreenProps<'Person'>) {
-  const { groups, people, profile, renamePerson, deletePerson, linkProfile } = useGroups();
-  const { groups: openGroups, hidden } = useOpenGroups();
+  const { groups, people, profile, upiIds, renamePerson, deletePerson, linkProfile } = useGroups();
+  const { user } = useAuth();
+  const { showNote } = useUndo();
+  const { groups: openGroups } = useOpenGroups();
   const styles = useStyles();
   const { colors, dark } = useTheme();
   const { t } = useI18n();
   const person = people.find((p) => p.id === route.params.personId);
+  // Someone with an account in one of your live groups: their id is their account id.
+  const hasAccount = !!person && groups.some((g) => g.online && g.members.some((m) => m.id === person.id && m.account));
+  const isMeHere = !!person && (profile.personId === person.id || user?.id === person.id);
+  const theirUpi = useAccountUpi(hasAccount && !isMeHere ? person!.id : null);
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(person?.name ?? '');
   const [error, setError] = useState<string | null>(null);
@@ -43,7 +56,18 @@ export function PersonScreen({ navigation, route }: ScreenProps<'Person'>) {
 
   const nets = netsFor(openGroups, person.id);
   const { owed, owes } = totals(nets);
-  const isMe = profile.personId === person.id;
+  const isMe = isMeHere;
+  const shownUpi = isMe ? upiIds : theirUpi;
+  const askWhoIsMe = !isMe && !hasAccount && !user && !people.some((p) => p.id === profile.personId);
+
+  const copy = async (vpa: string) => {
+    try {
+      await Clipboard.setStringAsync(vpa);
+      showNote(t('upi.copied', { id: vpa }));
+    } catch {
+      // Nothing was copied; the id is still there to read.
+    }
+  };
 
   const saveName = () => {
     const n = name.trim().replace(/\s+/g, ' ');
@@ -125,9 +149,39 @@ export function PersonScreen({ navigation, route }: ScreenProps<'Person'>) {
           </View>
         ) : null}
 
+        {/* Where to pay them: from their account (or yours). Guests have none. */}
+        {isMe || hasAccount ? (
+          <>
+            <SectionLabel>{t('upi.title.short')}</SectionLabel>
+            {shownUpi.length ? (
+              <View style={styles.upiList}>
+                {shownUpi.map((u, i) => (
+                  <Pressable
+                    key={u.vpa}
+                    onPress={() => void copy(u.vpa)}
+                    accessibilityLabel={t('upi.copy', { id: u.vpa })}
+                    style={({ pressed }) => [styles.upiRow, i > 0 && styles.upiLine, pressed && styles.pressed]}
+                  >
+                    <Ionicons name="wallet-outline" size={18} color={colors.tint} />
+                    <View style={styles.flex}>
+                      <Text style={styles.upiVpa} selectable numberOfLines={1}>
+                        {u.vpa}
+                      </Text>
+                      {u.label ? <Text style={styles.upiLabel}>{u.label}</Text> : null}
+                    </View>
+                    <Ionicons name="copy-outline" size={17} color={colors.tint} />
+                  </Pressable>
+                ))}
+              </View>
+            ) : (
+              <Text style={styles.empty}>{isMe ? t('person.noUpiMine') : t('person.noUpi', { name: person.name })}</Text>
+            )}
+          </>
+        ) : null}
+
         <SectionLabel>{t('person.groups', { count: nets.length })}</SectionLabel>
-        {nets.length === 0 && !hidden ? <Text style={styles.empty}>{t('person.noGroups')}</Text> : null}
-        {hidden ? <Text style={styles.empty}>{t('lock.notCounted', { count: hidden })}</Text> : null}
+        {nets.length === 0 ? <Text style={styles.empty}>{t('person.noGroups')}</Text> : null}
+        <Text style={styles.empty}>{t('lock.notCounted')}</Text>
         {nets.map(({ group, net }) => (
           <Pressable
             key={group.id}
@@ -153,7 +207,9 @@ export function PersonScreen({ navigation, route }: ScreenProps<'Person'>) {
           </Pressable>
         ))}
 
-        {!isMe ? (
+        {/* Only while the app doesn't know who you are yet (signed out, no
+            person linked): once it does, nobody else's page offers it. */}
+        {askWhoIsMe ? (
           <PrimaryButton
             label={t('person.thisIsMe')}
             variant="outline"
@@ -170,6 +226,11 @@ export function PersonScreen({ navigation, route }: ScreenProps<'Person'>) {
 }
 
 const useStyles = makeStyles((c) => ({
+  upiList: { backgroundColor: c.surface, borderRadius: radii.lg, overflow: 'hidden', marginBottom: spacing(2) },
+  upiRow: { flexDirection: 'row', alignItems: 'center', gap: spacing(3), paddingHorizontal: spacing(4), paddingVertical: spacing(3) },
+  upiLine: { borderTopWidth: 1, borderTopColor: c.background },
+  upiVpa: { fontSize: font.md, fontWeight: '700', color: c.textPrimary },
+  upiLabel: { fontSize: font.sm - 1, color: c.textSecondary, marginTop: 1 },
   missing: { textAlign: 'center', marginTop: spacing(16), color: c.textSecondary },
   content: { padding: spacing(5), paddingBottom: spacing(12) },
   flex: { flex: 1 },

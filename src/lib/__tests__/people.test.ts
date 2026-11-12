@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyMembers, nameTakenIn, netsByPerson, netsFor, personForProfile, reconcilePeople, renameInGroups, resolveMe, totals } from '../people';
+import { adoptAccountId, applyMembers, nameTakenIn, netsByPerson, netsFor, personForProfile, reconcilePeople, renameInGroups, resolveMe, totals } from '../people';
 import { expense, group } from './fixtures';
 import type { Group, Person } from '../../types';
 
@@ -106,5 +106,52 @@ describe('netsFor / totals', () => {
     const all = netsByPerson([goa, mess]);
     for (const id of ['A', 'B', 'C']) assert.deepEqual(all.get(id), netsFor([goa, mess], id));
     assert.equal(all.get('Z'), undefined);
+  });
+});
+
+describe('adoptAccountId', () => {
+  const acct = 'acct-1';
+  const trip = { ...group(['me', 'B'], [expense('dinner', 300, 'me', ['me', 'B'])]), payments: [{ id: 'p1', from: 'B', to: 'me', amount: 100, createdAt: 0 }] };
+  const other = group(['B', 'C'], [expense('taxi', 100, 'B', ['B', 'C'])], 'g2');
+  const state = {
+    groups: [trip, other],
+    bin: [],
+    people: [person('me', 'Krish'), person('B', 'Neha'), person('C', 'Sayak')],
+    meMap: { g1: 'me' },
+    profile: { name: 'Krish', personId: 'me' },
+  };
+
+  it('gives you the account id everywhere, and leaves other groups as they were', () => {
+    const out = adoptAccountId(state, 'me', acct);
+    const g = out.groups[0];
+    assert.deepEqual(g.members.map((m) => m.id), [acct, 'B']);
+    assert.deepEqual(g.expenses[0].payers, { [acct]: 30000 });
+    assert.deepEqual(g.expenses[0].splitAmong, [acct, 'B']);
+    assert.equal(g.payments[0].to, acct);
+    assert.equal(out.groups[1], other, 'a group without you is the same object');
+    assert.deepEqual(out.people.map((p) => p.id), [acct, 'B', 'C']);
+    assert.deepEqual(out.meMap, { g1: acct });
+    assert.equal(out.profile.personId, acct);
+  });
+
+  it('changes nothing when you already have it', () => {
+    assert.equal(adoptAccountId(state, acct, acct), state);
+  });
+});
+
+describe('people in live groups', () => {
+  const online = { role: 'member' as const, status: 'active' as const, settings: { editInfo: 'all' as const, addExpenses: 'all' as const, addGuests: 'all' as const, requireApproval: false } };
+
+  it("keeps a live group's names, and still adds its new people to the directory", () => {
+    const live = { ...group(['A', 'N'], []), online, members: [{ id: 'A', name: 'Krishnendu' }, { id: 'N', name: 'Neha' }] };
+    const out = reconcilePeople([live], [person('A', 'Krish')]);
+    assert.equal(out.groups[0], live, 'not renamed to this phone’s nickname');
+    assert.deepEqual(out.people.map((p) => p.id), ['A', 'N']);
+  });
+
+  it('leaves live groups alone when you take your account id', () => {
+    const live = { ...group(['me', 'B'], []), online };
+    const s = { groups: [live], bin: [], people: [person('me', 'Krish')], meMap: {}, profile: { name: 'Krish', personId: 'me' } };
+    assert.equal(adoptAccountId(s, 'me', 'acct').groups[0], live);
   });
 });

@@ -1,4 +1,4 @@
-import type { CategoryKey, Expense, Group, GroupKind, Member, Payment, Person, Recurring, SplitMode } from '../types';
+import type { CategoryKey, Expense, Group, GroupKind, Member, OnlineInfo, Payment, Person, Recurring, Role, SplitMode } from '../types';
 import { toISODate } from './format';
 
 /**
@@ -54,10 +54,18 @@ export function sanitizeGroups(raw: unknown): SanitizeResult {
 function sanitizeGroup(g: unknown, counter: { skipped: number }): Group | null {
   if (!isObj(g) || !isStr(g.id) || !isStr(g.name) || !Array.isArray(g.members)) return null;
 
+  const online = sanitizeOnline(g.online);
   const members: Member[] = [];
   for (const m of g.members) {
     if (isObj(m) && isStr(m.id) && isStr(m.name) && !members.some((x) => x.id === m.id)) {
-      members.push({ id: m.id, name: m.name.trim().slice(0, 30) });
+      members.push({
+        id: m.id,
+        name: m.name.trim().slice(0, 30),
+        // Roles and the rest only mean something in a live group.
+        ...(online && ROLES.includes(m.role as Role) ? { role: m.role as Role } : {}),
+        ...(online && m.account === true ? { account: true } : {}),
+        ...(online && GONE.includes(m.gone as never) ? { gone: m.gone as NonNullable<Member['gone']> } : {}),
+      });
     }
   }
   if (members.length === 0) return null;
@@ -107,8 +115,38 @@ function sanitizeGroup(g: unknown, counter: { skipped: number }): Group | null {
     // Only present when used, so older groups stay exactly as they were.
     ...(closedMonths.length ? { closedMonths } : {}),
     ...(recurring.length ? { recurring } : {}),
+    ...(online ? { online } : {}),
     createdAt: typeof g.createdAt === 'number' ? g.createdAt : now,
     updatedAt: typeof g.updatedAt === 'number' ? g.updatedAt : now,
+  };
+}
+
+/** The group as a plain local group: no live info, no roles. */
+export function localCopy(g: Group): Group {
+  if (!g.online) return g;
+  const { online: _online, ...rest } = g;
+  return { ...rest, members: g.members.map((m) => ({ id: m.id, name: m.name })) };
+}
+
+const ROLES: Role[] = ['creator', 'admin', 'member'];
+const GONE = ['left', 'removed', 'merged'] as const;
+const STATUSES: OnlineInfo['status'][] = ['active', 'left', 'removed', 'gone'];
+const WHO = (v: unknown): 'all' | 'admins' => (v === 'admins' ? 'admins' : 'all');
+
+/** A live group's info as saved on this phone; anything unknown makes it a local group. */
+function sanitizeOnline(o: unknown): OnlineInfo | null {
+  if (!isObj(o) || !STATUSES.includes(o.status as OnlineInfo['status'])) return null;
+  const s = isObj(o.settings) ? o.settings : {};
+  return {
+    role: ROLES.includes(o.role as Role) ? (o.role as Role) : null,
+    status: o.status as OnlineInfo['status'],
+    settings: {
+      editInfo: WHO(s.editInfo),
+      addExpenses: WHO(s.addExpenses),
+      addGuests: WHO(s.addGuests),
+      requireApproval: s.requireApproval === true,
+    },
+    ...(typeof o.deletedAt === 'number' ? { deletedAt: o.deletedAt } : {}),
   };
 }
 

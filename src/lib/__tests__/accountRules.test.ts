@@ -1,7 +1,23 @@
 /// <reference types="node" />
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { authErrorKey, isEmail } from '../accountRules';
+import { authErrorKey, isEmail, cleanCode, isCode } from '../accountRules';
+
+describe('sign-up codes', () => {
+  it('takes 6 to 10 digits, spaces and dashes allowed', () => {
+    assert.equal(isCode('123456'), true);
+    assert.equal(isCode(' 123 456 '), true);
+    assert.equal(isCode('123-456'), true);
+    assert.equal(cleanCode('123 456'), '123456');
+    assert.equal(isCode('12345'), false);
+    assert.equal(isCode('12345a'), false);
+    assert.equal(isCode('12345678901'), false);
+  });
+
+  it('a wrong or old code gets its own message', () => {
+    assert.equal(authErrorKey({ code: 'otp_expired' }), 'account.err.badCode');
+  });
+});
 
 describe('account rules', () => {
   it('checks email addresses loosely, the server has the last word', () => {

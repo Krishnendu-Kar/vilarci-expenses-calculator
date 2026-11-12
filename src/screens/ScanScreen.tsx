@@ -43,10 +43,27 @@ export function ScanScreen({ navigation }: ScreenProps<'Scan'>) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [permission?.status]);
 
-  const onScanned = useCallback((r: BarcodeScanningResult) => {
-    const code = inviteCode(r.data);
-    setFound(code ? { kind: 'invite', code } : isOurLink(r.data) ? { kind: 'broken' } : { kind: 'other' });
-  }, []);
+  const onScanned = useCallback(
+    (r: BarcodeScanningResult) => {
+      const code = inviteCode(r.data);
+      // An invite goes straight to joining.
+      if (code) navigation.replace('Join', { code });
+      else setFound(isOurLink(r.data) ? { kind: 'broken' } : { kind: 'other' });
+    },
+    [navigation],
+  );
+
+  const typeCode = (
+    <Pressable
+      onPress={() => navigation.replace('Join')}
+      hitSlop={8}
+      accessibilityRole="button"
+      style={[styles.typeCode, { bottom: insets.bottom + spacing(8) }]}
+    >
+      <Ionicons name="keypad-outline" size={16} color="#FFFFFF" />
+      <Text style={styles.typeCodeText}>{t('join.typeCode')}</Text>
+    </Pressable>
+  );
 
   const close = (
     <Pressable
@@ -65,6 +82,7 @@ export function ScanScreen({ navigation }: ScreenProps<'Scan'>) {
     return (
       <View style={styles.screen}>
         {close}
+        {typeCode}
         <Message icon="camera-outline" title={t('scan.noCamera.title')} body={t('scan.noCamera.body')} />
       </View>
     );
@@ -76,6 +94,7 @@ export function ScanScreen({ navigation }: ScreenProps<'Scan'>) {
     return (
       <View style={styles.screen}>
         {close}
+        {typeCode}
         <Message icon="camera-outline" title={t('scan.permTitle')} body={t('scan.permBody')}>
           {permission.canAskAgain ? (
             <PrimaryButton label={t('scan.allow')} onPress={() => requestPermission().catch(() => {})} style={styles.button} />
@@ -107,6 +126,7 @@ export function ScanScreen({ navigation }: ScreenProps<'Scan'>) {
         <Text style={styles.aimText}>{t('scan.hint')}</Text>
       </View>
       {close}
+      {found ? null : typeCode}
 
       {found ? (
         <View style={[styles.sheet, { paddingBottom: insets.bottom + spacing(5) }]}>
@@ -160,6 +180,19 @@ function Message({
 // Always dark, like any camera.
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#0B0506' },
+  typeCode: {
+    position: 'absolute',
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing(2),
+    paddingHorizontal: spacing(4),
+    paddingVertical: spacing(2.5),
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    zIndex: 2,
+  },
+  typeCodeText: { color: '#FFFFFF', fontSize: font.sm + 1, fontWeight: '700' },
   close: {
     position: 'absolute',
     left: spacing(4),

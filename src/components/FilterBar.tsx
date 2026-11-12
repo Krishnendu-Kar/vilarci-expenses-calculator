@@ -49,7 +49,7 @@ export function FilterBar<K extends string>({ options, value, onChange }: Props<
             accessibilityRole="tab"
             accessibilityState={{ selected: active }}
           >
-            {o.icon ? <Ionicons name={o.icon} size={14} color={active ? colors.onPrimary : colors.textSecondary} /> : null}
+            {o.icon ? <Ionicons name={o.icon} size={12} color={active ? colors.onPrimary : colors.textSecondary} /> : null}
             <Text style={[styles.label, active && styles.labelActive]}>{o.label}</Text>
           </Pressable>
         );
@@ -60,13 +60,13 @@ export function FilterBar<K extends string>({ options, value, onChange }: Props<
 
 const useStyles = makeStyles((c) => ({
   bar: { flexGrow: 0 },
-  row: { gap: spacing(2), paddingHorizontal: spacing(4), paddingVertical: spacing(3) },
+  row: { gap: spacing(1.5), paddingHorizontal: spacing(4), paddingVertical: spacing(2.5) },
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing(1.5),
-    paddingHorizontal: spacing(3.5),
-    paddingVertical: spacing(1.75),
+    gap: spacing(1),
+    paddingHorizontal: spacing(3),
+    paddingVertical: spacing(1.25),
     borderRadius: radii.pill,
     backgroundColor: c.surface,
     borderWidth: 1,
@@ -81,6 +81,6 @@ const useStyles = makeStyles((c) => ({
     shadowOffset: { width: 0, height: 3 },
     elevation: 3,
   },
-  label: { fontSize: font.sm + 1, fontWeight: '600', color: c.textSecondary },
+  label: { fontSize: font.sm, fontWeight: '600', color: c.textSecondary },
   labelActive: { color: c.onPrimary, fontWeight: '700' },
 }));

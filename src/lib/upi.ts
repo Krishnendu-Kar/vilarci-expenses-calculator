@@ -35,3 +35,19 @@ export function sanitizeUpiIds(raw: unknown): UpiId[] {
 
 /** "krish@okaxis, krish@ybl" for reports. */
 export const vpaList = (ids: UpiId[]) => ids.map((u) => u.vpa).join(', ');
+
+/**
+ * A UPI payment link (NPCI's deep link, onlinedb.md §19): opens the phone's
+ * UPI app with the payee, amount and a note filled in. The amount is paise.
+ * Some apps refuse links to personal ids, so Copy stays the main way.
+ */
+export function upiPayUrl(p: { vpa: string; name: string; amount: number; note: string }): string {
+  const q = [
+    ['pa', cleanVpa(p.vpa)],
+    ['pn', p.name.slice(0, 50)],
+    ['am', (p.amount / 100).toFixed(2)],
+    ['cu', 'INR'],
+    ['tn', p.note.slice(0, 50)],
+  ];
+  return `upi://pay?${q.map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&')}`;
+}

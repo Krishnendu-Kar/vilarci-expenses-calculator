@@ -15,9 +15,18 @@ interface LockValue {
   isOpen: (groupId: string) => boolean;
   /** Asks for the fingerprint or screen lock; true when it said yes. */
   open: (groupId: string, prompt: string) => Promise<boolean>;
+  /** One fingerprint or screen lock opens all these groups (the Locked groups page). */
+  openAll: (groupIds: string[], prompt: string) => Promise<boolean>;
+  /** Shut again now, without waiting for the app to be away (leaving the Locked groups page). */
+  lockAgain: (groupIds: string[]) => void;
 }
 
-const LockContext = createContext<LockValue>({ isOpen: () => true, open: async () => true });
+const LockContext = createContext<LockValue>({
+  isOpen: () => true,
+  open: async () => true,
+  openAll: async () => true,
+  lockAgain: () => {},
+});
 
 export function LockProvider({ children }: { children: React.ReactNode }) {
   const { prefs } = useGroups();
@@ -44,7 +53,22 @@ export function LockProvider({ children }: { children: React.ReactNode }) {
     return true;
   }, []);
 
-  const value = useMemo(() => ({ isOpen, open }), [isOpen, open]);
+  const openAll = useCallback(async (groupIds: string[], prompt: string) => {
+    if (!(await askOwner(prompt, translate('common.cancel')))) return false;
+    setUnlocked((s) => new Set([...s, ...groupIds]));
+    return true;
+  }, []);
+
+  const lockAgain = useCallback((groupIds: string[]) => {
+    setUnlocked((s) => {
+      if (!groupIds.some((id) => s.has(id))) return s;
+      const next = new Set(s);
+      groupIds.forEach((id) => next.delete(id));
+      return next;
+    });
+  }, []);
+
+  const value = useMemo(() => ({ isOpen, open, openAll, lockAgain }), [isOpen, open, openAll, lockAgain]);
   return <LockContext.Provider value={value}>{children}</LockContext.Provider>;
 }
 
@@ -52,13 +76,11 @@ export const useLock = () => useContext(LockContext);
 
 /**
  * For pages that add up several groups (People, a person, Profile): the
- * groups whose numbers may show, and how many locked ones were left out.
+ * groups whose numbers may show. How many were left out is never shown, so
+ * nobody looking at the phone learns whether locked groups exist.
  */
-export function useOpenGroups(): { groups: Group[]; hidden: number } {
+export function useOpenGroups(): { groups: Group[] } {
   const { groups } = useGroups();
   const { isOpen } = useLock();
-  return useMemo(() => {
-    const open = groups.filter((g) => isOpen(g.id));
-    return { groups: open, hidden: groups.length - open.length };
-  }, [groups, isOpen]);
+  return useMemo(() => ({ groups: groups.filter((g) => isOpen(g.id)) }), [groups, isOpen]);
 }

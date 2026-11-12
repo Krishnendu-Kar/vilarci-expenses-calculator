@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, SectionList, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { EmptyState } from '../../components/EmptyState';
@@ -8,10 +8,13 @@ import { useGroups } from '../../context/GroupsContext';
 import { useUndo } from '../../context/UndoContext';
 import { useMenu, type MenuAnchor, type MenuItem } from '../../context/MenuContext';
 import { counted, sortExpenses } from '../../lib/split';
+import { can } from '../../lib/permissions';
 import { searchExpenses } from '../../lib/search';
 import { expenseMonth, isFiltered, NO_FILTER, type ExpenseFilter } from '../../lib/months';
 import { money } from '../../lib/money';
-import { dayLabel, monthLabel } from '../../lib/format';
+import { dayLabel, monthLabel, toISODate } from '../../lib/format';
+import { loadEvents } from '../../lib/storage';
+import { describeEvent } from '../../lib/activity';
 import { payerText, splitShort } from '../../lib/describe';
 import { categoryOf } from '../../data/categories';
 import { makeStyles, useTheme } from '../../theme/ThemeContext';
@@ -40,7 +43,26 @@ interface Section {
   date?: string;
   total?: number;
   count?: number;
+  /** Live groups: who joined or left that day, as small notes under the date. */
+  notes?: string[];
   data: Expense[];
+}
+
+/** Joins and leaves are part of the story; other Activity lines stay on the Activity page. */
+const MEMBER_EVENTS = new Set(['member_joined', 'member_left', 'member_removed']);
+
+/**
+ * Puts each day's notes on its section, adding days that only have notes,
+ * newest day first like the expenses.
+ */
+function withNotes(days: Section[], notes: Map<string, string[]>): Section[] {
+  if (!notes.size) return days;
+  const out = days.map((d) => (notes.has(d.date!) ? { ...d, notes: notes.get(d.date!) } : d));
+  const have = new Set(days.map((d) => d.date));
+  for (const [date, list] of notes) {
+    if (!have.has(date)) out.push({ key: `notes-${date}`, kind: 'day', date, notes: list, data: [] });
+  }
+  return out.sort((a, b) => (a.date! < b.date! ? 1 : a.date! > b.date! ? -1 : 0));
 }
 
 function byDay(list: Expense[]): Section[] {
@@ -61,7 +83,9 @@ export function ExpensesTab({ group, shown, filter, onFilter, onOpenFilter, onRe
   const { colors } = useTheme();
   const i18n = useI18n();
   const { deleteExpense, saveExpense, pinExpense, archiveExpense } = useGroups();
-  const { showUndo } = useUndo();
+  const { showUndo, showNote } = useUndo();
+  // Live groups where only admins add expenses: the rows still read, but don't open.
+  const editable = can('edit_expenses', group);
   const { openMenu } = useMenu();
   const [query, setQuery] = useState('');
   const [archivedOpen, setArchivedOpen] = useState(false);
@@ -74,6 +98,27 @@ export function ExpensesTab({ group, shown, filter, onFilter, onOpenFilter, onRe
   const shownLive = shown.filter(counted);
   const shownTotal = shownLive.reduce((s, e) => s + e.amount, 0);
 
+  // Live groups: joins and leaves from the Activity, read again after each sync.
+  const [memberEvents, setMemberEvents] = useState<{ date: string; text: string; seq: number }[]>([]);
+  useEffect(() => {
+    if (!group.online) return;
+    let current = true;
+    const nameOf = (id: string) => group.members.find((m) => m.id === id)?.name;
+    loadEvents(group.id, 500)
+      .then((events) => {
+        if (!current) return;
+        setMemberEvents(
+          events
+            .filter((e) => MEMBER_EVENTS.has(e.type))
+            .map((e) => ({ date: toISODate(new Date(e.createdAt)), text: describeEvent(e, nameOf).text, seq: e.seq })),
+        );
+      })
+      .catch(() => {});
+    return () => {
+      current = false;
+    };
+  }, [group]);
+
   const sections = useMemo((): Section[] => {
     // A search looks inside the filter, archived expenses included.
     if (searching) {
@@ -82,15 +127,23 @@ export function ExpensesTab({ group, shown, filter, onFilter, onOpenFilter, onRe
     const live = shown.filter(counted);
     const pinned = live.filter((e) => e.pinnedAt != null).sort((a, b) => (b.pinnedAt ?? 0) - (a.pinnedAt ?? 0));
     const archived = sortExpenses(shown.filter((e) => !counted(e)));
+    // Notes follow the month filter; with categories picked they'd only be noise.
+    const notes = new Map<string, string[]>();
+    if (!filter.categories.length) {
+      for (const n of [...memberEvents].sort((a, b) => a.seq - b.seq)) {
+        if (filter.month && n.date.slice(0, 7) !== filter.month) continue;
+        notes.set(n.date, [...(notes.get(n.date) ?? []), n.text]);
+      }
+    }
     return [
       ...(pinned.length ? [{ key: 'pinned', kind: 'pinned' as const, data: pinned }] : []),
-      ...byDay(live.filter((e) => e.pinnedAt == null)),
+      ...withNotes(byDay(live.filter((e) => e.pinnedAt == null)), notes),
       ...(archived.length
         ? [{ key: 'archived', kind: 'archived' as const, count: archived.length, data: archivedOpen ? archived : [] }]
         : []),
     ];
     // The language is a dependency: category names are searched in it.
-  }, [group, shown, query, searching, names, archivedOpen, i18n.lang]);
+  }, [group, shown, query, searching, names, archivedOpen, i18n.lang, memberEvents, filter]);
 
   // With a filter on, nothing found may just be outside it: offer to drop it.
   const clearFilter = filtered ? (
@@ -211,9 +264,17 @@ export function ExpensesTab({ group, shown, filter, onFilter, onOpenFilter, onRe
             <Ionicons name={archivedOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textSecondary} />
           </Pressable>
         ) : (
-          <View style={styles.dayHead}>
-            <Text style={styles.dayLabel}>{dayLabel(section.date!)}</Text>
-            <Text style={styles.dayLabel}>{money(section.total ?? 0)}</Text>
+          <View>
+            <View style={styles.dayHead}>
+              <Text style={styles.dayLabel}>{dayLabel(section.date!)}</Text>
+              {section.data.length ? <Text style={styles.dayLabel}>{money(section.total ?? 0)}</Text> : null}
+            </View>
+            {/* Like WhatsApp's system messages: small, grey, centred. */}
+            {section.notes?.map((text, i) => (
+              <View key={i} style={styles.note}>
+                <Text style={styles.noteText}>{text}</Text>
+              </View>
+            ))}
           </View>
         )
       }
@@ -224,8 +285,8 @@ export function ExpensesTab({ group, shown, filter, onFilter, onOpenFilter, onRe
         const archived = !counted(item);
         return (
           <Pressable
-            onPress={() => onOpen(item)}
-            onLongPress={(e) => showMenu(item, pressPoint(e))}
+            onPress={() => (editable ? onOpen(item) : showNote(i18n.t('expenses.onlyAdmins')))}
+            onLongPress={(e) => editable && showMenu(item, pressPoint(e))}
             style={({ pressed }) => [t.row, styles.row, archived && styles.archivedRow, pressed && t.pressed]}
           >
             <View style={styles.catIcon}>
@@ -257,7 +318,7 @@ export function ExpensesTab({ group, shown, filter, onFilter, onOpenFilter, onRe
                 {item.note ? <Ionicons name="document-text-outline" size={13} color={colors.textSecondary} /> : null}
               </View>
             </View>
-            <MoreButton size={17} style={styles.more} onOpen={(anchor) => showMenu(item, anchor)} />
+            {editable ? <MoreButton size={17} style={styles.more} onOpen={(anchor) => showMenu(item, anchor)} /> : null}
           </Pressable>
         );
       }}
@@ -307,6 +368,16 @@ const useStyles = makeStyles((c) => ({
     borderColor: c.tint,
   },
   clearText: { color: c.tint, fontWeight: '700', fontSize: font.sm + 1 },
+  note: {
+    alignSelf: 'center',
+    backgroundColor: c.surfaceAlt,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing(3),
+    paddingVertical: spacing(1),
+    marginBottom: spacing(2),
+    maxWidth: '90%',
+  },
+  noteText: { fontSize: font.xs + 1, color: c.textSecondary, textAlign: 'center' },
   dayHead: {
     flexDirection: 'row',
     justifyContent: 'space-between',

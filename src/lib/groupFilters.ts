@@ -50,6 +50,9 @@ export function filterGroups(
   prefs: GroupPrefs = {},
   now = Date.now(),
 ): Group[] {
+  // Locked groups stay off Home altogether, like WhatsApp's locked chats:
+  // pulling the list down shows the way to them (lockedGroups).
+  groups = groups.filter((g) => !isLocked(prefs[g.id]));
   if (filter === 'archived') {
     return groups
       .filter((g) => isArchived(prefs[g.id]))

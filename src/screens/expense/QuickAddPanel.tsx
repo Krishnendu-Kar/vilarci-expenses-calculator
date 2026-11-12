@@ -209,7 +209,9 @@ export function QuickAddPanel({ group, initial, converted, onConvert, onClear, o
       splitAmong: e.splitAmong.map(fix),
     }));
     addExpenses(group.id, expenses, newMembers.map((m) => ({ id: fix(m.id), name: m.name })));
-    if (meId) setMe(group.id, meId);
+    // Remembered for next time, only where it's yours to pick (a live group
+    // knows you by your account).
+    if (meId && !group.online) setMe(group.id, meId);
     onDone();
   };
 

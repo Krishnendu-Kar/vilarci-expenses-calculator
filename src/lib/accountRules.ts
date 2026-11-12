@@ -18,7 +18,15 @@ const CODES: Record<string, Key> = {
   over_request_rate_limit: 'account.err.tooMany',
   email_address_invalid: 'account.err.badEmail',
   signup_disabled: 'account.err.generic',
+  otp_expired: 'account.err.badCode',
+  otp_disabled: 'account.err.generic',
 };
+
+/** A sign-up code as typed: digits only (spaces and dashes dropped). */
+export const cleanCode = (s: string) => s.replace(/[\s-]/g, '');
+
+/** Codes are 6 to 10 digits (Supabase's email OTP length setting). */
+export const isCode = (s: string) => /^\d{6,10}$/.test(cleanCode(s));
 
 /** The message to show for anything a sign-in, sign-up or reset threw. */
 export function authErrorKey(e: unknown): Key {

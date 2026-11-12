@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Image, Platform, Pressable, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, AppState, FlatList, Image, Platform, Pressable, RefreshControl, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -18,9 +18,12 @@ import { useGroups } from '../context/GroupsContext';
 import { useUndo } from '../context/UndoContext';
 import { useMenu, type MenuAnchor, type MenuItem } from '../context/MenuContext';
 import { useLock } from '../context/LockContext';
-import { getLastBackup } from '../lib/storage';
+import { useAuth } from '../context/AuthContext';
+import { useSync } from '../context/SyncContext';
+import { getLastBackup, loadSetting } from '../lib/storage';
+import { autoBackupIfDue } from '../lib/autoBackup';
 import { askOwner, lockSupport } from '../lib/deviceLock';
-import { notify } from '../lib/confirm';
+import { confirmAction, notify } from '../lib/confirm';
 import { computeBalances, counted, groupTotal, suggestTransfers } from '../lib/split';
 import { money } from '../lib/money';
 import { groupKindOf, type IconName } from '../data/categories';
@@ -72,10 +75,14 @@ export function GroupsScreen({ navigation }: TabProps<'Home'>) {
     unlockGroup,
     moveToBin,
     restoreFromBin,
+    giveNewId,
   } = useGroups();
   const insets = useSafeAreaInsets();
-  const { isOpen } = useLock();
-  const { showUndo } = useUndo();
+  const { isOpen, openAll } = useLock();
+  const { showUndo, showNote } = useUndo();
+  const { user } = useAuth();
+  const { putOnline, syncNow } = useSync();
+  const [pickMeFor, setPickMeFor] = useState<Group | null>(null);
   const { openMenu } = useMenu();
   const styles = useStyles();
   const { colors } = useTheme();
@@ -83,7 +90,52 @@ export function GroupsScreen({ navigation }: TabProps<'Home'>) {
   const [filter, setFilter] = useState<GroupFilter>('all');
   const [pinFor, setPinFor] = useState<Group | null>(null);
 
-  const archivedCount = groups.filter((g) => isArchived(prefs[g.id])).length;
+  // Opening the app (and coming back to it): a Drive backup, if auto backup is on and one is due.
+  const groupsRef = React.useRef(groups);
+  groupsRef.current = groups;
+  useEffect(() => {
+    const t = setTimeout(() => void autoBackupIfDue(groupsRef.current), 5000);
+    const sub = AppState.addEventListener('change', (s) => s === 'active' && void autoBackupIfDue(groupsRef.current));
+    return () => {
+      clearTimeout(t);
+      sub.remove();
+    };
+  }, []);
+
+  // First start: the welcome pages, once.
+  useEffect(() => {
+    let current = true;
+    loadSetting('welcomeSeen')
+      .then((seen) => {
+        if (current && !seen) navigation.navigate('Welcome');
+      })
+      .catch(() => {});
+    return () => {
+      current = false;
+    };
+  }, [navigation]);
+
+  // Locked groups are off the lists (like WhatsApp's locked chats). Pulling a
+  // list down shows a "Locked groups" row; it hides again once you go elsewhere.
+  const locked = useMemo(() => groups.filter((g) => isLocked(prefs[g.id])), [groups, prefs]);
+  const [revealed, setRevealed] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  useFocusEffect(useCallback(() => () => setRevealed(false), []));
+  const onPullDown = useCallback(async () => {
+    if (locked.length) setRevealed(true);
+    // A pull is also a sync (onlinedb.md §9.6).
+    setRefreshing(true);
+    try {
+      await syncNow();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [locked.length, syncNow]);
+  const openLocked = async () => {
+    if (await openAll(locked.map((g) => g.id), t('lock.promptLocked'))) navigation.navigate('LockedGroups');
+  };
+
+  const archivedCount = groups.filter((g) => isArchived(prefs[g.id]) && !isLocked(prefs[g.id])).length;
   // "Archived" only shows up once something is archived.
   const filters = useMemo(
     () => FILTERS.filter((f) => f.key !== 'archived' || archivedCount > 0),
@@ -165,6 +217,7 @@ export function GroupsScreen({ navigation }: TabProps<'Home'>) {
             ? { key: 'unlock', icon: 'lock-open-outline' as const, title: t('groupMenu.unlock') }
             : { key: 'lock', icon: 'lock-closed-outline' as const, title: t('groupMenu.lock') },
         ]),
+    ...(g.online ? [] : [{ key: 'online', icon: 'cloud-upload-outline' as const, title: t('online.menu') }]),
     { key: 'bin', icon: 'trash-outline', title: t('groupMenu.bin'), danger: true },
   ];
 
@@ -183,8 +236,41 @@ export function GroupsScreen({ navigation }: TabProps<'Home'>) {
     else if (key === 'unlock') {
       askOwner(t('lock.promptUnlock', { name: g.name }), t('common.cancel')).then((ok) => ok && unlockGroup(g.id));
     } else if (key === 'bin') {
+      // A live group you're still in: leave it first (then its copy can go to the Bin).
+      if (g.online?.status === 'active') {
+        notify(t('groupForm.leaveFirstTitle'), t('groupForm.leaveFirstBody', { name: g.name }));
+        return;
+      }
       moveToBin(g.id);
       showUndo(t('bin.moved', { name: g.name }), () => restoreFromBin(g.id));
+    } else if (key === 'online') goOnline(g);
+  };
+
+  // Put online (onlinedb.md §8): signed in, said yes, and the app knows which member is you.
+  const goOnline = (g: Group) => {
+    if (!user) {
+      notify(t('online.signInTitle'), t('online.signInBody'));
+      navigation.navigate('Auth', { mode: 'signIn' });
+      return;
+    }
+    confirmAction(t('online.confirmTitle', { name: g.name }), t('online.confirmBody'), t('online.confirmButton'), () => void upload(g));
+  };
+
+  const upload = async (g: Group, meId?: string) => {
+    try {
+      showNote(t('online.working', { name: g.name }));
+      const res = await putOnline(g.id, meId);
+      if (res === 'pickMe') setPickMeFor(g);
+      else if (res === 'signIn') notify(t('online.signInTitle'), t('online.signInBody'));
+      else if (res === 'exists') {
+        // A copy went online first (a shared group file): this one can go up as its own group.
+        confirmAction(t('online.existsTitle'), t('online.existsBody'), t('online.existsButton'), () => {
+          const moved = giveNewId(g.id);
+          if (moved) void upload(moved, meId);
+        });
+      } else showNote(t('online.done', { name: g.name }));
+    } catch (e) {
+      notify(t('online.failed'), e instanceof Error ? e.message : String(e));
     }
   };
 
@@ -195,7 +281,8 @@ export function GroupsScreen({ navigation }: TabProps<'Home'>) {
     if (support !== 'ok') return;
     if (!(await askOwner(t('lock.promptLock', { name: g.name }), t('common.cancel')))) return;
     lockGroup(g.id);
-    showUndo(t('lock.done', { name: g.name }), () => unlockGroup(g.id));
+    // It leaves Home now; the note says where it went.
+    showUndo(t('lock.doneHidden', { name: g.name }), () => unlockGroup(g.id));
   };
 
   const renderList = (f: GroupFilter) => (
@@ -203,16 +290,37 @@ export function GroupsScreen({ navigation }: TabProps<'Home'>) {
       data={lists[f] ?? []}
       keyExtractor={(g) => g.id}
       contentContainerStyle={styles.list}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={() => void onPullDown()} tintColor={colors.tint} colors={[colors.primary]} />
+      }
       ListHeaderComponent={
-        needsBackup && groups.length ? (
-          <Pressable onPress={() => navigation.navigate('Export')} style={styles.nag}>
-            <Ionicons name="cloud-upload-outline" size={20} color={colors.tint} />
-            <Text style={styles.nagText}>
-              {t('home.nag', { status: lastBackup ? t('home.nag.old') : t('home.nag.never') })}
-            </Text>
-            <Ionicons name="chevron-forward" size={18} color={colors.tint} />
-          </Pressable>
-        ) : undefined
+        <>
+          {revealed && locked.length ? (
+            <Pressable onPress={() => void openLocked()} style={({ pressed }) => [styles.lockedRow, pressed && styles.pressed]}>
+              <View style={styles.lockedIcon}>
+                <Ionicons name="lock-closed" size={17} color={colors.tint} />
+              </View>
+              <View style={styles.flex}>
+                <Text style={styles.lockedTitle}>
+                  {t('lock.lockedRow')} ({locked.length})
+                </Text>
+                <Text style={styles.lockedBody} numberOfLines={1}>
+                  {t('lock.lockedRowBody')}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+            </Pressable>
+          ) : null}
+          {needsBackup && groups.length ? (
+            <Pressable onPress={() => navigation.navigate('Export')} style={styles.nag}>
+              <Ionicons name="cloud-upload-outline" size={20} color={colors.tint} />
+              <Text style={styles.nagText}>
+                {t('home.nag', { status: lastBackup ? t('home.nag.old') : t('home.nag.never') })}
+              </Text>
+              <Ionicons name="chevron-forward" size={18} color={colors.tint} />
+            </Pressable>
+          ) : null}
+        </>
       }
       ListEmptyComponent={
         // A View, not a fragment: FlatList passes onLayout to this element.
@@ -260,15 +368,12 @@ export function GroupsScreen({ navigation }: TabProps<'Home'>) {
       <Pressable
         onPress={() => navigation.navigate('Search')}
         accessibilityRole="search"
-        style={({ pressed }) => [styles.searchPill, pressed && styles.pressed]}
+        style={({ pressed }) => [styles.searchBar, pressed && styles.glassPressed]}
       >
-        <Ionicons name="search" size={18} color={colors.primary} />
+        <Ionicons name="search" size={17} color="rgba(255,255,255,0.85)" />
         <Text style={styles.searchText} numberOfLines={1}>
           {t('search.placeholder')}
         </Text>
-        <View style={styles.searchGo}>
-          <Ionicons name="arrow-forward" size={16} color={colors.white} />
-        </View>
       </Pressable>
     </HeroBackground>
   );
@@ -307,6 +412,18 @@ export function GroupsScreen({ navigation }: TabProps<'Home'>) {
           setPinFor(null);
         }}
       />
+      <ActionSheet
+        visible={!!pickMeFor}
+        title={t('online.whoTitle')}
+        subtitle={t('online.whoBody', { name: pickMeFor?.name ?? '' })}
+        options={(pickMeFor?.members ?? []).map((m) => ({ key: m.id, icon: 'person-outline', title: m.name }))}
+        onPick={(memberId) => {
+          const g = pickMeFor;
+          setPickMeFor(null);
+          if (g) void upload(g, memberId);
+        }}
+        onClose={() => setPickMeFor(null)}
+      />
     </ScreenContainer>
   );
 }
@@ -334,7 +451,7 @@ function Faces({ names }: { names: string[] }) {
     <View style={styles.faces}>
       {names.slice(0, 3).map((n, i) => (
         <View key={`${n}-${i}`} style={[styles.face, i > 0 && styles.faceOver]}>
-          <Avatar name={n} size={20} />
+          <Avatar name={n} size={16} />
         </View>
       ))}
       {extra > 0 ? (
@@ -414,7 +531,7 @@ interface CardProps {
   onMenu: (anchor: MenuAnchor) => void;
 }
 
-function GroupCard({ group, pref, closed, visits, onPress, onMenu }: CardProps) {
+export function GroupCard({ group, pref, closed, visits, onPress, onMenu }: CardProps) {
   const styles = useStyles();
   const { colors, dark } = useTheme();
   const { t } = useI18n();
@@ -424,6 +541,8 @@ function GroupCard({ group, pref, closed, visits, onPress, onMenu }: CardProps) 
   const total = groupTotal(group);
   const pinned = isPinned(pref);
   const daysLeft = pinDaysLeft(pref);
+  const { waiting } = useSync();
+  const unsent = group.online ? (waiting[group.id] ?? 0) : 0;
 
   return (
     <Pressable
@@ -432,50 +551,55 @@ function GroupCard({ group, pref, closed, visits, onPress, onMenu }: CardProps) 
       style={({ pressed }) => [styles.card, pinned && styles.cardPinned, pressed && styles.pressed]}
     >
       <View style={[styles.iconWrap, { backgroundColor: tint.bg }]}>
-        <Ionicons name={kind.icon} size={22} color={tint.fg} />
+        <Ionicons name={kind.icon} size={19} color={tint.fg} />
       </View>
       <View style={styles.cardBody}>
         <View style={styles.nameRow}>
-          {pinned ? <Ionicons name="pin" size={14} color={colors.tint} /> : null}
-          {isLocked(pref) ? <Ionicons name="lock-closed" size={13} color={colors.textSecondary} /> : null}
+          {pinned ? <Ionicons name="pin" size={13} color={colors.tint} /> : null}
+          {isLocked(pref) ? <Ionicons name="lock-closed" size={12} color={colors.textSecondary} /> : null}
           <Text style={styles.name} numberOfLines={1}>
             {group.name}
           </Text>
+          {group.online ? (
+            <Ionicons
+              // Live: up to date, changes waiting to go up, or read-only now.
+              name={unsent ? 'cloud-upload-outline' : group.online.status === 'active' ? 'cloud-done-outline' : 'cloud-offline-outline'}
+              size={13}
+              color={unsent ? colors.tint : colors.textSecondary}
+              accessibilityLabel={unsent ? t('sync.waiting', { count: unsent }) : t('online.live')}
+            />
+          ) : null}
+          {pinned && daysLeft ? <Text style={styles.pinDays}>{t('home.card.pinnedDays', { count: daysLeft })}</Text> : null}
         </View>
+        {/* One line, like a chat list: who's in it and how many expenses. */}
         <View style={styles.metaRow}>
           {group.members.length ? <Faces names={group.members.map((m) => m.name)} /> : null}
-          <Text style={styles.meta} numberOfLines={2}>
+          <Text style={styles.meta} numberOfLines={1}>
             {t('count.expense', { count: group.expenses.filter(counted).length })}
             {visits ? ` · ${t('home.card.opened', { count: visits })}` : ''}
           </Text>
-        </View>
-        <View style={styles.badges}>
-          {group.expenses.length && !closed ? (
-            <View style={[styles.badge, pending ? styles.badgePending : styles.badgeDone]}>
-              <Text style={[styles.badgeText, pending ? styles.badgeTextPending : styles.badgeTextDone]}>
-                {pending ? t('home.card.toSettle', { count: pending }) : t('home.card.allSettled')}
-              </Text>
-            </View>
-          ) : null}
-          {pinned ? (
-            <View style={[styles.badge, styles.badgePin]}>
-              <Text style={[styles.badgeText, styles.badgeTextPin]}>
-                {daysLeft ? t('home.card.pinnedDays', { count: daysLeft }) : t('home.card.pinned')}
-              </Text>
-            </View>
-          ) : null}
         </View>
       </View>
       <View style={styles.right}>
         {closed ? (
           <>
-            <Ionicons name="lock-closed" size={20} color={colors.textSecondary} />
+            <Ionicons name="lock-closed" size={16} color={colors.textSecondary} />
             <Text style={styles.totalLabel}>{t('home.card.locked')}</Text>
           </>
         ) : (
           <>
             <Text style={styles.total}>{money(total)}</Text>
-            <Text style={styles.totalLabel}>{t('home.card.spent')}</Text>
+            {/* Under the amount: a dot and a few words, red while payments are due. */}
+            {group.expenses.length ? (
+              <View style={styles.status}>
+                <View style={[styles.dot, { backgroundColor: pending ? colors.danger : colors.success }]} />
+                <Text style={[styles.statusText, { color: pending ? colors.danger : colors.success }]} numberOfLines={1}>
+                  {pending ? t('home.card.toSettle', { count: pending }) : t('home.card.allSettled')}
+                </Text>
+              </View>
+            ) : (
+              <Text style={styles.totalLabel}>{t('home.card.spent')}</Text>
+            )}
           </>
         )}
       </View>
@@ -502,26 +626,21 @@ const useStyles = makeStyles((c) => ({
     borderColor: 'rgba(255,255,255,0.18)',
   },
   glassPressed: { backgroundColor: 'rgba(255,255,255,0.24)' },
-  searchPill: {
+  // Frosted glass like the buttons above it, so it sits in the dark top
+  // instead of standing out of it; the light shows through.
+  searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing(2.5),
+    height: 44,
     marginTop: spacing(3),
-    paddingLeft: spacing(4),
-    paddingRight: spacing(1.5),
-    paddingVertical: spacing(1.5),
+    paddingHorizontal: spacing(4),
     borderRadius: radii.pill,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
   },
-  searchText: { flex: 1, fontSize: font.md, color: '#8A6F72' },
-  searchGo: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: c.primary,
-  },
+  searchText: { flex: 1, fontSize: font.md, color: 'rgba(255,255,255,0.65)' },
   pullHint: { alignItems: 'center', gap: spacing(1.5), width: 90 },
   pullCircle: {
     width: 56,
@@ -534,7 +653,30 @@ const useStyles = makeStyles((c) => ({
     borderColor: c.accent,
   },
   pullText: { fontSize: font.xs + 1, fontWeight: '800', color: c.tint },
-  list: { paddingHorizontal: spacing(4), paddingTop: spacing(1), paddingBottom: spacing(28) },
+  // Grows to fill, so an empty list can still be pulled down.
+  list: { flexGrow: 1, paddingHorizontal: spacing(3), paddingTop: 0, paddingBottom: spacing(28) },
+  lockedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing(3),
+    backgroundColor: c.surface,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: c.border,
+    paddingHorizontal: spacing(3),
+    paddingVertical: spacing(2.5),
+    marginBottom: spacing(1.5),
+  },
+  lockedIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: c.surfaceAlt,
+  },
+  lockedTitle: { fontSize: font.md + 1, fontWeight: '700', color: c.textPrimary },
+  lockedBody: { fontSize: font.sm - 1, color: c.textSecondary, marginTop: 2 },
   nag: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -546,63 +688,48 @@ const useStyles = makeStyles((c) => ({
   },
   nagText: { flex: 1, fontSize: font.sm, color: c.textPrimary, lineHeight: 18 },
   importLink: { textAlign: 'center', color: c.tint, fontWeight: '700', fontSize: font.md },
+  // A compact row, close to a chat list: rows sit almost edge to edge.
   card: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: c.surface,
-    borderRadius: radii.lg,
-    paddingVertical: spacing(4),
-    paddingLeft: spacing(4),
-    paddingRight: spacing(1),
-    marginBottom: spacing(3),
+    borderRadius: radii.md,
+    paddingVertical: spacing(2.5),
+    paddingLeft: spacing(3),
+    paddingRight: 0,
+    marginBottom: spacing(1.5),
     borderWidth: 1,
     borderColor: c.border,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 2,
   },
   cardPinned: { borderColor: c.primaryLight },
   pressed: { opacity: 0.85 },
   iconWrap: {
-    width: 46,
-    height: 46,
-    borderRadius: 15,
+    width: 38,
+    height: 38,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: spacing(3),
   },
   cardBody: { flex: 1 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing(1) },
-  name: { flexShrink: 1, fontSize: font.lg, fontWeight: '700', color: c.textPrimary },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: spacing(2), marginTop: spacing(1.5) },
-  meta: { flexShrink: 1, fontSize: font.sm, color: c.textSecondary },
+  name: { flexShrink: 1, fontSize: font.md + 1, fontWeight: '700', color: c.textPrimary },
+  pinDays: { fontSize: font.xs, fontWeight: '700', color: c.tint },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: spacing(1.5), marginTop: spacing(1) },
+  meta: { flexShrink: 1, fontSize: font.sm - 1, color: c.textSecondary },
   faces: { flexDirection: 'row' },
   // A ring in the card's colour, so the overlap reads as separate faces.
-  face: { borderRadius: 12, borderWidth: 2, borderColor: c.surface },
-  faceOver: { marginLeft: -8 },
-  faceMore: { width: 24, height: 24, alignItems: 'center', justifyContent: 'center', backgroundColor: c.surfaceAlt },
-  faceMoreText: { fontSize: 9, fontWeight: '800', color: c.textSecondary },
-  badges: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing(1.5) },
-  badge: {
-    alignSelf: 'flex-start',
-    marginTop: spacing(2),
-    paddingHorizontal: spacing(2),
-    paddingVertical: 2,
-    borderRadius: radii.pill,
-  },
-  badgePending: { backgroundColor: c.dangerBg },
-  badgeDone: { backgroundColor: c.successBg },
-  badgePin: { backgroundColor: c.surfaceAlt },
-  badgeText: { fontSize: font.xs, fontWeight: '700' },
-  badgeTextPending: { color: c.danger },
-  badgeTextDone: { color: c.success },
-  badgeTextPin: { color: c.tint },
-  right: { alignItems: 'flex-end', marginLeft: spacing(2) },
-  total: { fontFamily: DISPLAY_FONT, fontSize: font.xl, color: c.textPrimary },
-  totalLabel: { fontSize: font.xs, color: c.textSecondary },
-  more: { paddingHorizontal: spacing(2), paddingVertical: spacing(3), marginLeft: spacing(1) },
+  face: { borderRadius: 10, borderWidth: 2, borderColor: c.surface },
+  faceOver: { marginLeft: -7 },
+  faceMore: { width: 20, height: 20, alignItems: 'center', justifyContent: 'center', backgroundColor: c.surfaceAlt },
+  faceMoreText: { fontSize: 8, fontWeight: '800', color: c.textSecondary },
+  right: { alignItems: 'flex-end', marginLeft: spacing(2), maxWidth: '40%' },
+  status: { flexDirection: 'row', alignItems: 'center', gap: spacing(1), marginTop: 2 },
+  dot: { width: 6, height: 6, borderRadius: 3 },
+  statusText: { flexShrink: 1, fontSize: font.xs - 1, fontWeight: '700' },
+  total: { fontFamily: DISPLAY_FONT, fontSize: font.md + 1, color: c.textPrimary },
+  totalLabel: { fontSize: font.xs - 1, color: c.textSecondary },
+  more: { paddingHorizontal: spacing(2), paddingVertical: spacing(2), marginLeft: spacing(0.5) },
   custom: { marginTop: spacing(4), paddingHorizontal: spacing(1) },
   customLabel: { fontSize: font.sm, fontWeight: '600', color: c.textSecondary, marginBottom: spacing(1.5), textTransform: 'uppercase' },
   customInput: {

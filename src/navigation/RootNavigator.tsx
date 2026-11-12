@@ -1,5 +1,7 @@
 import React, { useMemo } from 'react';
-import { DarkTheme, DefaultTheme, NavigationContainer, type Theme } from '@react-navigation/native';
+import { DarkTheme, DefaultTheme, NavigationContainer, type LinkingOptions, type Theme } from '@react-navigation/native';
+import { Platform } from 'react-native';
+import { INVITE_HOST, joinPathCode } from '../lib/invite';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,6 +23,13 @@ import { AboutScreen } from '../screens/AboutScreen';
 import { AuthScreen } from '../screens/AuthScreen';
 import { SearchScreen } from '../screens/SearchScreen';
 import { ScanScreen } from '../screens/ScanScreen';
+import { InviteScreen } from '../screens/InviteScreen';
+import { JoinScreen } from '../screens/JoinScreen';
+import { GroupSettingsScreen } from '../screens/GroupSettingsScreen';
+import { ActivityScreen } from '../screens/ActivityScreen';
+import { LockedGroupsScreen } from '../screens/LockedGroupsScreen';
+import { WelcomeScreen } from '../screens/WelcomeScreen';
+import { BackupScreen } from '../screens/BackupScreen';
 import { useTheme } from '../theme/ThemeContext';
 import { useI18n } from '../i18n/I18nContext';
 import type { IconName } from '../data/categories';
@@ -74,6 +83,23 @@ function MainTabs() {
   );
 }
 
+/**
+ * Invite links open the app on the Join page (onlinedb.md §15):
+ * https://esplit.vilarci.in/join/<code> (an App Link, once the site's
+ * assetlinks.json vouches for the app) or vesplit://join/<code>. Back goes
+ * Home. Any other link just opens the app. Phones only: on the web the
+ * browser's address stays as it is.
+ */
+const linking: LinkingOptions<RootStackParamList> = {
+  prefixes: ['vesplit://', `https://${INVITE_HOST}`],
+  getStateFromPath: (path) => {
+    const code = joinPathCode(path);
+    return {
+      routes: [{ name: 'Main' }, ...(code === null ? [] : [{ name: 'Join' as const, params: code ? { code } : undefined }])],
+    };
+  },
+};
+
 export function RootNavigator() {
   const { colors, dark } = useTheme();
   const { t } = useI18n();
@@ -95,7 +121,7 @@ export function RootNavigator() {
   }, [colors, dark]);
 
   return (
-    <NavigationContainer theme={navTheme}>
+    <NavigationContainer theme={navTheme} linking={Platform.OS === 'web' ? undefined : linking}>
       <Stack.Navigator screenOptions={{ ...header, contentStyle: { backgroundColor: colors.background } }}>
         <Stack.Screen name="Main" component={MainTabs} options={{ headerShown: false, title: t('tabs.home') }} />
         <Stack.Screen
@@ -122,6 +148,18 @@ export function RootNavigator() {
         <Stack.Screen name="Search" component={SearchScreen} options={{ headerShown: false, animation: 'fade' }} />
         {/* From the left, like the camera in WhatsApp: it sits left of All. */}
         <Stack.Screen name="Scan" component={ScanScreen} options={{ headerShown: false, animation: 'slide_from_left' }} />
+        <Stack.Screen name="Invite" component={InviteScreen} options={{ title: t('invite.title') }} />
+        {/* A card over Home, not a page of its own. */}
+        <Stack.Screen
+          name="Join"
+          component={JoinScreen}
+          options={{ title: t('join.title'), headerShown: false, presentation: 'transparentModal', animation: 'fade' }}
+        />
+        <Stack.Screen name="GroupSettings" component={GroupSettingsScreen} options={{ title: t('gsettings.title') }} />
+        <Stack.Screen name="Activity" component={ActivityScreen} options={{ title: t('activity.title') }} />
+        <Stack.Screen name="LockedGroups" component={LockedGroupsScreen} options={{ title: t('lock.lockedTitle') }} />
+        <Stack.Screen name="Backup" component={BackupScreen} options={{ title: t('backup.title') }} />
+        <Stack.Screen name="Welcome" component={WelcomeScreen} options={{ headerShown: false, animation: 'fade' }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

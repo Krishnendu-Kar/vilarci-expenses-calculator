@@ -358,8 +358,9 @@ describe('SQLite store', () => {
     for (const table of ['settings', 'people', 'groups', 'members', 'expenses', 'recurring', 'payers', 'splits', 'payments', 'closed_months', 'group_prefs', 'visits', 'me', 'drafts', 'legacy_ids']) {
       const rows = old.raw.prepare(`SELECT * FROM ${table}`).all() as Record<string, string | number | null>[];
       for (const r of rows) {
-        // Columns new in version 2; a 1.2 database doesn't have them.
-        const cols = Object.keys(r).filter((c) => !(table === 'expenses' && c === 'month') && !(table === 'group_prefs' && c === 'locked_at'));
+        // Columns added after version 1; a 1.2 database doesn't have them.
+        const later = ['expenses.month', 'group_prefs.locked_at', 'members.role', 'members.account', 'members.gone'];
+        const cols = Object.keys(r).filter((c) => !later.includes(`${table}.${c}`));
         raw.prepare(`INSERT INTO ${table} (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`).run(...cols.map((c) => r[c]));
       }
     }

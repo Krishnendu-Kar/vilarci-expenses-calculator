@@ -4,7 +4,7 @@ Vilarci E-Split helps a group of people share costs fairly: friends on a trip, s
 
 **Version 1:** everything is stored on the phone, in a small database (from 1.2). No account, no internet, no server.
 
-The app has a bar at the bottom with three pages: **Home** (your groups), **People** (everyone from all your groups) and **Profile** (you).
+The app has a bar at the bottom with three pages: **Home** (your groups), **Balances** (where you stand, with **People** and **Groups** tabs) and **Profile** (you).
 
 ---
 
@@ -15,23 +15,24 @@ A group is a set of people who share costs, such as "Goa trip" or "Room 204 mess
 | Feature | Details |
 |---|---|
 | Create a group | Give it a name and a type: **Trip**, **Hostel / Flat**, or **Other**. The type sets the group's icon, and Hostel / Flat groups work month by month (section 4). |
-| Managing people | The group form lists who's in (the first 5, then "+N more"). **Add or remove people** opens a popup where everything below happens: the add box at the top, everyone in the group (rename or remove), **Me**, and people from your other groups. **Done** closes it, and also adds a name still typed in the box. Changes are kept when you save the group. |
+| Managing people | The group form lists who's in (the first 5, then **Show all**), each with a **⋮**: **Rename** and **Remove** (in a live group: rename guests, and admins remove someone settled, through the server). **Add people** opens a popup with the add box at the top, **From contacts**, "Me" when you're not in yet, and your people from other groups. People already in the group aren't listed there; the ones you add in that go show under **Adding N people**, with × to take someone back out. |
 | Add yourself | A new group starts with **you** in it once the app knows your name. If it doesn't yet, tap **Me**, type your name once, and you're added; the name is saved to your Profile for next time. |
 | Add people from your other groups | In the popup, **From your other groups** lists everyone you've added before, with the groups they're in. Tap someone to add them. Typing filters the list, so you can find a friend quickly. |
+| Add people from contacts | In the popup, **From contacts** shows your phone's contacts by name (search, tick several, **Add N people**). They join as **guests**; a name already in your People is that same person, not a new one, and anyone already in the group is greyed out. Only names are read, only when you open it, and only the ones you add are saved, on the phone. The first time, the phone asks for permission. Not on the web build. |
 | Add someone new | Type a name and tap **+** (or press Enter). This always makes a new person. Typing someone already in the group says so. A group needs at least 2 people. |
 | Same person everywhere | People are saved by a unique id, not by their name. A friend you add from another group is the same person in both, so the app knows they're one person. |
-| Rename people | Tap any name in the people popup and change it. **The new name shows everywhere**: in every group, every expense, the People page and reports. Two people in the same group can't end up with the same name. |
+| Rename people | **⋮ → Rename** on a name in the group form. **The new name shows everywhere**: in every group, every expense, the People page and reports (the rename popup says so when they're in other groups). Two people in the same group can't end up with the same name. |
 | Remove people | Allowed only if the person isn't in any expense, payment or monthly repeat yet. Otherwise the app explains what to change first, so totals never break. |
-| Edit a group | Use the pencil icon in the group's header. |
+| Edit a group | Use the group's **⋮** menu (top right): **Edit group**, **Share group link** (live groups), **Share report**, **Manage access** (live groups, admins). In Edit group, change what you need and tap **Save** at the top right; the **trash icon** next to it moves the group to the Bin (a live group you are still in: leave it first). On a live group, the **QR** button beside "People" opens its invite (QR, code, link). |
 
 ### Home list
 
 | Feature | Details |
 |---|---|
-| Top of Home | No plain header bar. A dark maroon top with a **swinging, glowing pendulum** (the Vilarci buyer app's idea) that moves like a real one: slow at the ends, fastest through the bottom, with a soft glow that fades out evenly (white-hot in the middle) and grows brighter the faster it goes. **Touch the light to catch it**, drag and let go to throw it, or flick across the top to push it; it settles back into its usual swing (and hangs still, settling after a push, if the phone asks for less motion). Over it: the logo, **Scan** and **Settings** buttons, and right under them a white **search** pill; the light swings just above it. (Your balance across groups is on Profile.) |
-| Search | The search pill opens a page that finds **groups** and **people** by name (every word typed must match). Tap one to open it. A locked group's total stays hidden. |
-| Scan a group QR | The **camera** button, or **pulling right on All** (a camera circle follows your finger; let go once it's full size), opens the camera. It reads Vilarci invite links (`esplit.vilarci.in/join/<code>`). Joining needs live groups (next big update), so for now it shows the code and says to share the group file instead. Asks for the camera once; after a "never", offers Settings. Nothing is recorded. |
-| Group cards | Newest activity first. Each card has an icon tile in its type's colour (trip indigo, hostel teal, other orange), up to three members' initials and "+N", the number of expenses, the total spent, and a badge: **"N payments to settle"** or **"All settled"**. |
+| Top of Home | No plain header bar. A dark maroon top with a **swinging, glowing pendulum** (the Vilarci buyer app's idea) that moves like a real one: slow at the ends, fastest through the bottom, with a soft glow that fades out evenly (white-hot in the middle), **slowly changes colour** (yellow, coral, pink, violet, sky blue, mint, and round again) and grows brighter the faster it goes. Every 15 seconds or so a **firecracker** goes up behind it and bursts into coloured sparks. **Touch the light to catch it**, drag and let go to throw it, or flick across the top to push it; it settles back into its usual swing (and hangs still, settling after a push, if the phone asks for less motion). Over it: the logo, **Scan** and **Settings** buttons, and right under them a frosted-glass **search** bar (like the buttons, so the light shows through); the light swings just above it. (Your balance across groups is on Profile.) |
+| Search | The search bar opens a page that finds **groups** and **people** by name (every word typed must match). Tap one to open it. A locked group's total stays hidden. |
+| Scan a group QR | The **camera** button, or **pulling right on All** (a camera circle follows your finger; let go once it's full size), opens the camera. It reads Vilarci invite links (`esplit.vilarci.in/join/<code>`) and opens **Join** for that code. Asks for the camera once; after a "never", offers Settings. Nothing is recorded. |
+| Group cards | Newest activity first, as **compact rows** (like a chat list, in the app's own style). Each row has an icon tile in its type's colour (trip indigo, hostel teal, other orange), the name, then one line with up to three members' initials and "+N" and the number of expenses. On the right: the total spent and under it a small dot with **"N to settle"** (red) or **"All settled"** (green). |
 | Filter bar | A WhatsApp-style row: **All · Trip · Hostel · Other · Most visited · Archived** (the chosen one is filled). Tap one, or **swipe left/right** on the list. **Archived** only appears once something is archived. |
 | Most visited | Groups you open most often, most opened first. The open counts stay on this phone. |
 | Group menu | Tap **⋮** on a card (or long-press it): a small menu opens right at the dots (or under your finger), WhatsApp style, with **Pin to top**, **Archive**, **Lock group** (on phones) and **Move to bin**. Tap outside or press Back to close it. |
@@ -53,8 +54,9 @@ A group is a set of people who share costs, such as "Goa trip" or "Room 204 mess
 
 - ⋮ on a group → **Lock group**. Opening it then asks for your **fingerprint, face or the phone's screen lock** (PIN, pattern or password). The app keeps no PIN of its own.
 - Once opened, it stays open until the app has been away for a minute.
-- While it's shut, Home shows a lock instead of its amounts, and its money isn't counted on the People, person or Profile pages ("1 locked group isn't counted here").
-- **Remove lock** from the same menu (asks first). Locks are for this phone only: never in backups or shared files.
+- **Locked groups are hidden**, like WhatsApp's locked chats: they leave Home (every filter) and search. **Pull the Home list down** and a **Locked groups (n)** row appears at the top (the pull also syncs). Tap it, pass the fingerprint, face or screen lock once, and the **Locked groups** page lists them; open any of them without being asked again. **Leaving that page locks them all again**, and the row disappears until the next pull.
+- Their money isn't counted on the People, person or Profile pages while they're shut (Balances and a person's page always show "Locked groups aren't counted here.", with no count, so nobody can tell whether any groups are locked).
+- **Remove lock**: ⋮ on a group in the Locked groups page (asks first); it goes back to Home. Locks are for this phone only: never in backups or shared files.
 - Needs a phone screen lock; without one, the app says how to set it up. Not on the web version.
 
 ---
@@ -111,6 +113,8 @@ Add expense has a **Paste from chat** box under the amount, styled like a chat m
 
 ## 3. Group screen
 
+A group opens at once: the header, name and tabs show first and the numbers and lists fill in right after (the other tabs are built a moment later), so opening never waits for the maths.
+
 The maroon header carries on into the top of the page: **Total spent** (or "Spent in November 2026" when filtered, with **‹ ›** on either side to step a month back or ahead: back to the group's first month, ahead up to 12 months) in large type, then "₹6,200 per person · 4 people", then four underlined tabs. Tap one or **swipe left/right**:
 
 ### Expenses
@@ -127,15 +131,24 @@ The maroon header carries on into the top of the page: **Total spent** (or "Spen
 - **Your row is marked "You"** and outlined.
 
 ### Settle up
-- The **fewest payments** that make everyone even.
-- Tap **Paid** once the money has been sent. An undo bar appears straight away in case it was a mistake.
-- Rows involving you read "Krish (you) pays Rahul".
-- Where someone pays you, your **UPI ids** show under the row; tap one to copy it. No UPI id yet? A hint points to Profile.
+- The **fewest payments** that make everyone even, in one card: each row shows who pays (avatar and name, "You" for you), "pays Rahul" / "pays you" under it, and the amount on the right (red when you pay, green when you get it).
+- Tap the small **Paid** pill once the money has been sent. An undo bar appears straight away in case it was a mistake. In a live group only the payer, the receiver or an admin sees Paid (and the undo arrow under Payments recorded).
+- Where the money goes, under the names: your **UPI ids** on the first row paid to you (no UPI id yet? a hint points to Profile), or in live groups the other person's from their account. Tap one to copy it.
+- On your own rows (phones): a **Pay** pill opens your UPI app with the amount filled in (when they have several UPI ids, it first asks which one, with each id's label); back in the app it asks **"Did you pay Rahul ₹450?"** with **Mark as paid**. Some UPI apps refuse links to personal ids, so Copy stays.
+- **Send to the group** (a slim button) shares the PDF or message.
 - **Payments recorded** lists everything marked as paid; each can be undone (with its own undo bar).
-
 ### Stats
 - Biggest expense, average per day, spending by category, who paid, and day by day.
 - Follows the Expenses filter, with the same chips at the top.
+
+### Live groups (online)
+- **⋮** at the top also has **Leave group**, and for admins **Delete for everyone** (or **Restore group** within 30 days). Leaving needs you settled (under ₹1), out of every monthly repeat, and not the only admin; otherwise it says why ("You owe ₹450 here. Settle up first."). Nobody else with an account? Delete the group instead.
+- After leaving, being removed, or a delete for everyone, a line at the top says the copy is **read-only** and why.
+- **Members ⋮** (admins): **Remove from group**, for anyone settled who isn't the creator and is in no repeat. Their name stays on old expenses but can't be put on new ones.
+- The **bell** opens Activity; a **gold dot** on it means someone else changed something since you last looked.
+- A small **cloud** in the header while changes wait to go up (tap to try now); the Home row's cloud turns into an upload cloud too.
+- Changes from other phones show **at once** while the app is open (the server pokes it); otherwise on opening the app or coming back to it.
+- Joins and leaves show as small grey notes under the day in the Expenses list ("Rahul joined with the invite link", "Neha left"), like WhatsApp's.
 
 ---
 
@@ -155,13 +168,15 @@ Hostel and flat groups run for months, so they work a little differently from tr
 
 ---
 
-## 5. People
+## 5. Balances (People and Groups)
 
 | Feature | Details |
 |---|---|
-| People page | Opens straight away (the stars join a moment later). A compact night-sky top (violet into wine, softly twinkling stars; no plain header bar) that stays put while the list scrolls: the title, the count and the search box, with a small handle under them. **Pull the top down (or tap the handle) to open a drawer** with **your people in orbit**; push it back up or tap again to close it. It is closed every time you come in. In the drawer: you in the middle with a gold "You" tag, everyone else on two slow tilted rings, the ones with money open nearest. Each face's ring shows their balance: **green gets back, red owes, grey settled**, explained by three chips with counts. Nearer faces are bigger and brighter. **Swipe across it to spin it** (a finger stops it, a flick keeps it turning and it slows down by itself); **tap a face**: it lifts, glows in its colour and shows the name, then that person opens (holding a finger on it shows the same and pauses the orbit). Then the search box. Below, everyone from all your groups, once, you first. Each card matches the orbit: the same coloured ring round their face, your gold "You" tag, their groups as small chips in the group type's colour (two, then "+N"), the amount in large type with GETS BACK / OWES under it (or "settled"), and an arrow. **Search** by name. |
+| Balances page | Two tabs under the title and search, **People** and **Groups** (tap or swipe); the search box and the count follow the open tab. Opens straight away (the stars join a moment later). A compact night-sky top (violet into wine, softly twinkling stars; no plain header bar) that stays put while the list scrolls: the title, the count and the People / Groups tabs, a small handle under them, then the search box. **Pull the top down (or tap the handle) to open a drawer** with **your people in orbit**; push it back up or tap again to close it. It is closed every time you come in. In the drawer: you in the middle with a gold "You" tag, everyone else on two slow tilted rings, the ones with money open nearest. Each face's ring shows their balance: **green gets back, red owes, grey settled**, explained by three chips with counts. Nearer faces are bigger and brighter. **Swipe across it to spin it** (a finger stops it, a flick keeps it turning and it slows down by itself); **tap a face**: it lifts, glows in its colour and shows the name, then that person opens (holding a finger on it shows the same and pauses the orbit). Below, everyone from all your groups, once, you first. Each card matches the orbit: the same coloured ring round their face, your gold "You" tag, their groups as small chips in the group type's colour (two, then "+N"), the amount in large type with GETS BACK / OWES under it (or "settled"), and an arrow. **Search** by name. |
 | Guest tag | Everyone without an account shows **Guest** (for now that's everyone, as live groups aren't here yet). You show **Account** once you sign in. |
-| A person's page | Their balance in each group (tap to open the group), totals for "Gets back" and "Owes", **Rename** (changes the name in every group), and **This is me** to link yourself. Someone who's in no group can be removed. |
+| Groups tab | One line per group (locked ones left out) with "+₹X" or "−₹Y" (or Settled); tap a line to open the group. **Search** by group name. |
+| Who you are in a group | Each line on the Groups tab shows "You: Krish · change" for groups only on your phone (it only sets whose side the numbers are shown from). Where the app can't tell, it asks "Who are you here?" and you pick the member once. In a **live group** you are your account: it shows "You: Krish" with nothing to change. The same choice is used for "me" in Paste from chat. |
+| A person's page | Their balance in each group (tap to open the group), totals for "Gets back" and "Owes", their **UPI ids** (people with an account in one of your live groups, from their account; kept on the phone for offline; tap to copy; yours on your own page), **Rename** (changes the name in every group), and **This is me** to link yourself (only while the app doesn't know who you are: signed out with no name linked yet). Someone who's in no group can be removed. |
 
 ---
 
@@ -172,10 +187,9 @@ Hostel and flat groups run for months, so they work a little differently from tr
 | Look | Quiet and simple: a settings button top right, your initial in a circle with a thin bright ring, your name (tap it or ✎ to edit, in a small popup), and your email with a tick when it's verified, or "Guest · saved on this phone only". Then plain lists with room between them. No cards inside cards, no header bar. |
 | Sign in | For guests, one slim row: **Sign in / Create account**, with a line on what an account keeps. |
 | Your name | Saved on this phone only. It tells the app which member is you in each group, and lets you add yourself to new groups in one tap. Renaming yourself renames your person everywhere. |
-| Your balance | **Across all your groups:** "You get back ₹X" and "You owe ₹Y" in large type (or "You're all settled"), then **Your groups**: one line each with "+₹X" or "−₹Y". |
-| Who you are in a group | Each group line shows "You: Krish · change". Where the app can't tell, it asks "Who are you here?" and you pick the member once. The same choice is used for "me" in Paste from chat. |
-| UPI ids | Up to 3 (name@bank, e.g. krish@okaxis), each with an optional label like GPay, with **Copy** and **Remove** (with undo). They show in Settle and in the reports you send. Saved on this phone. |
-| Account (optional) | **Sign in** or **Create account** with email and password; **Forgot password?** sends a link to set a new one. Signed in, your name and UPI ids are kept with the account (a new phone gets them back). **Log out** keeps everything on the phone; **Delete account** removes the account, name and UPI ids from the server. Without an account the app works exactly as before. |
+| Your balance | **Across all your groups:** "You get back ₹X" and "You owe ₹Y" in large type (or "You're all settled"). |
+| UPI ids | Up to 3 (name@bank, e.g. krish@okaxis), each with an optional label like GPay, with **Copy** and **Remove** (with undo). They show in Settle and in the reports you send. The **?** by the heading says what they're for; trying to add a 4th says only 3 fit. |
+| Account (optional) | Signed out: **Continue with Google** (one tap, in the Play Store app), or **Sign in** / **Create account** (creating one emails a **6-digit code** from Vilarci; type it in and you're signed in, with "Send a new code" after a minute; signing in before confirming sends a fresh code) with email and password; **Forgot password?** sends a link to set a new one. Signed in, your name and UPI ids are kept with the account (a new phone gets them back). Signed in, **Log out** and **Delete account** are in Settings → Account. **Log out** keeps groups that aren't live on the phone; **Delete account** first checks you could leave every live group and lists what's in the way ("Goa: you owe ₹450 here. Settle up first."); then it leaves them all and removes the account, name and UPI ids from the server. Without an account the app works exactly as before. |
 | Settings | A Settings row at the bottom (also the gear on Home). |
 
 ---
@@ -199,12 +213,15 @@ Open with the gear on Home, or from Profile. A menu; each option opens its own p
 
 | Option | What it does |
 |---|---|
+| **Google Drive backup** | Your groups in a hidden folder of your Google Drive that only this app can read (the newest two kept). **Back up now**, **Automatic backup** (off / daily / weekly, run when the app opens and one is due), and **Restore**: pick a backup, then the usual Import preview. Counts as a backup for Home's reminder. Needs the Play Store app (not Expo Go). |
 | **Export data** | Saves all groups into one file (`vilarci-e-split-backup-2026-10-27.json`) through the share menu. Shows the last export date, red if it's over 2 weeks old. A home banner reminds you after 2 weeks. |
 | **Import data** | Pick a backup or a group file. A preview shows each group as **New** or **Updates your copy** before anything changes. Broken files are explained, never half-loaded. Files made by older versions still work and update the right group. |
 | **Bin** | Deleted groups, kept 30 days (section 1). |
 | **Appearance** | **Same as phone**, **Light** or **Dark**. Dark mode covers every screen; shared PDFs stay light. |
 | **Language** | **English, हिन्दी (Hindi), বাংলা (Bengali), தமிழ் (Tamil).** The whole app switches at once, including dates, reports and messages you share. |
+| **How to use** | The welcome pages again: what the app does and how to use it, in five swipeable pages. They also show once on the first start (Skip or Get started). |
 | **About** | Logo, name, version, what the app does, "Made by Vilarci" and a link to **dev.vilarci.in**. |
+| **Account** (signed in) | **Log out** (with the email you're signed in as) asks "Do you really want to log out?" first (or warns that changes not uploaded yet would be lost). **Delete account** (in red): a warning first, then the check for groups you can't leave yet, then "Delete for good? This can't be undone." |
 
 The app version is shown at the bottom of Settings.
 
@@ -260,6 +277,6 @@ The app version is shown at the bottom of Settings.
 
 - **Continue with Google** for accounts.
 - **Google Drive backup:** to your own Drive, like WhatsApp. Export and Import stay too.
-- **Live groups:** invite by link or QR code, admins and members, guests for people without the app (link them to their account later), an activity feed, and it works offline: changes upload when you're back online.
+- **Live groups** (being built, in test builds): signed in, a group's **⋮ → Put online** puts it on the server; you become its creator and the others are guests. The app asks "Which one is you?" when it doesn't know. Live groups show a small cloud next to their name, stay the same on every phone signed in to your account, and keep working offline: changes upload by themselves a couple of seconds later, or when the app next opens. If someone changed the same thing later, or you're no longer allowed to, the app puts the group's version back and says so. Logging out takes live groups off the phone (they come back when you sign in; you're warned if changes haven't uploaded). **Invite** (the person icon on a live group): a QR code, an 8-letter code and a link to copy or share; admins can reset it. **Join**: scan the QR (or type the code); you see the group's name and size, can say which guest you are ("Are you one of these?") so your past expenses become yours, and join, or ask to join when admins approve new members. Admins see who's asking (and who they say they are) and let them in or decline. **Members** shows Creator, Admin and Guest tags (Guest: no account, just added for the sums); tap someone with an account to open their page; admins can make or dismiss admins and link a guest to a member (their expenses and payments move over). **Group settings** (admins): approval for new members; who can add and edit expenses, add guests, change the name and type; the invite link on or off. Where only admins may add expenses, the list stays readable and says so. **Activity** (the bell next to the ⋮ on a live group): every change in the group, newest first, grouped by day with the time on this phone: who joined (with the link, or let in by an admin), who added, edited (and what changed), archived or deleted which expense, payments recorded or undone, renames, new admins and settings. The server writes each line as the change is saved, so nobody can fake or hide one. **Invite links** tapped in WhatsApp or anywhere else open the app straight on Join (from the next store build; signed out, it asks you to sign in first and then carries on); the website's **Open in the app** button does the same. Leaving, removing, deleting, the unread dot, live updates and Pay are described under the group screen (§3, Live groups) and Settle.
 - **Quick updates:** small fixes reach your phone without waiting for a Play Store update.
 - Later: notifications, WhatsApp OTP login, receipt photos, a "Rate the app" prompt, foreign currencies, itemised bills.

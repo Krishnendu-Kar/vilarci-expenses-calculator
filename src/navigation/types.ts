@@ -31,6 +31,20 @@ export type RootStackParamList = {
   Search: undefined;
   /** Read a group's invite QR code with the camera. */
   Scan: undefined;
+  /** A live group's invite link, QR and code; for admins also requests and settings. */
+  Invite: { groupId: string };
+  /** Join with an invite code (from a link or the scanner), or type one in. */
+  Join: { code?: string } | undefined;
+  /** Locked groups, kept off Home; reached by pulling Home down and the fingerprint or screen lock. */
+  LockedGroups: undefined;
+  /** What the app does and how to use it: first start, or Settings → How to use. */
+  Welcome: undefined;
+  /** Settings → Google Drive backup. */
+  Backup: undefined;
+  /** A live group's Activity: every change, who made it and when. */
+  Activity: { groupId: string };
+  /** A live group's settings (admins). */
+  GroupSettings: { groupId: string };
 };
 
 export type ScreenProps<K extends keyof RootStackParamList> = NativeStackScreenProps<RootStackParamList, K>;

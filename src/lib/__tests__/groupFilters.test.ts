@@ -27,6 +27,14 @@ const groups = [g('goa', 'trip', 1), g('mess', 'hostel', 3), g('flat', 'other', 
 const ids = (list: { id: string }[]) => list.map((x) => x.id);
 
 describe('filterGroups', () => {
+  it('leaves locked groups out of every list', () => {
+    const prefs = lock({}, 'mess', 1);
+    assert.deepEqual(ids(filterGroups(groups, 'all', {}, prefs)), ['manali', 'flat', 'goa']);
+    assert.deepEqual(ids(filterGroups(groups, 'hostel', {}, prefs)), []);
+    assert.deepEqual(ids(filterGroups(groups, 'visited', { mess: { count: 3, last: 1 } }, prefs)), []);
+    assert.deepEqual(ids(filterGroups(groups, 'archived', {}, archive(prefs, 'mess'))), []);
+  });
+
   it('all: newest activity first', () => {
     assert.deepEqual(ids(filterGroups(groups, 'all', {})), ['manali', 'mess', 'flat', 'goa']);
   });

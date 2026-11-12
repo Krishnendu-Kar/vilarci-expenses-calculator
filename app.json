@@ -2,7 +2,7 @@
   "expo": {
     "name": "Vilarci E-Split",
     "slug": "vilarci-expenses-calculator",
-    "version": "1.1.0",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -11,17 +11,35 @@
     },
     "android": {
       "package": "in.vilarci.expensesplit",
-      "versionCode": 2,
+      "versionCode": 4,
       "blockedPermissions": [
         "android.permission.SYSTEM_ALERT_WINDOW",
         "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE"
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.WRITE_CONTACTS"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#9A0003",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
-      }
+      },
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "esplit.vilarci.in",
+              "pathPrefix": "/join/"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -29,6 +47,7 @@
     },
     "plugins": [
       "./plugins/withReleaseSigning",
+      "./plugins/withOptionalFeatures",
       "expo-sharing",
       "@react-native-community/datetimepicker",
       "expo-font",
@@ -55,7 +74,15 @@
           "microphonePermission": false,
           "recordAudioAndroid": false
         }
-      ]
-    ]
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Vilarci E-Split reads names from your contacts only when you add people to a group. Only the names you pick are saved, on this phone."
+        }
+      ],
+      "@react-native-google-signin/google-signin"
+    ],
+    "scheme": "vesplit"
   }
 }

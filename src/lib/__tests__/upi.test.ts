@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanVpa, isVpa, MAX_UPI, sameVpa, sanitizeUpiIds, vpaList } from '../upi';
+import { cleanVpa, isVpa, MAX_UPI, sameVpa, sanitizeUpiIds, vpaList, upiPayUrl } from '../upi';
 
 describe('UPI ids', () => {
   it('accepts name@bank ids and rejects anything else', () => {
@@ -37,5 +37,20 @@ describe('UPI ids', () => {
     ]);
     assert.deepEqual(sanitizeUpiIds('krish@okaxis'), []);
     assert.equal(vpaList(ids), 'krish@okaxis, krish@ybl, krish@paytm');
+  });
+});
+
+describe('upiPayUrl', () => {
+  it('fills in the payee, amount in rupees with paise, and the note', () => {
+    assert.equal(
+      upiPayUrl({ vpa: 'rahul@okaxis', name: 'Rahul K', amount: 45050, note: 'Goa Trip 2026' }),
+      'upi://pay?pa=rahul%40okaxis&pn=Rahul%20K&am=450.50&cu=INR&tn=Goa%20Trip%202026',
+    );
+  });
+
+  it('cleans the id and keeps names and notes short', () => {
+    const url = upiPayUrl({ vpa: 'neha @ybl', name: 'N'.repeat(80), amount: 100, note: 'x&y' });
+    assert.ok(url.startsWith('upi://pay?pa=neha%40ybl&pn=' + 'N'.repeat(50) + '&am=1.00&'));
+    assert.ok(url.endsWith('tn=x%26y'));
   });
 });

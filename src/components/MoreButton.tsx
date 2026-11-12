@@ -11,10 +11,12 @@ interface Props {
   size?: number;
   style?: StyleProp<ViewStyle>;
   hitSlop?: number;
+  /** The dots' colour; white on a header bar. */
+  color?: string;
 }
 
 /** The ⋮ button. */
-export function MoreButton({ onOpen, size = 18, style, hitSlop = 10 }: Props) {
+export function MoreButton({ onOpen, size = 18, style, hitSlop = 10, color }: Props) {
   const ref = useRef<HostInstance>(null);
   const { colors } = useTheme();
   const { t } = useI18n();
@@ -26,7 +28,7 @@ export function MoreButton({ onOpen, size = 18, style, hitSlop = 10 }: Props) {
       style={style}
       accessibilityLabel={t('home.card.more')}
     >
-      <Ionicons name="ellipsis-vertical" size={size} color={colors.textSecondary} />
+      <Ionicons name="ellipsis-vertical" size={size} color={color ?? colors.textSecondary} />
     </Pressable>
   );
 }

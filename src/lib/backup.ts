@@ -1,5 +1,5 @@
 import type { Group } from '../types';
-import { SCHEMA_VERSION, sanitizeGroups, type SanitizeResult } from './migrate';
+import { SCHEMA_VERSION, localCopy, sanitizeGroups, type SanitizeResult } from './migrate';
 import { translate } from '../i18n';
 
 // Backup files are plain JSON so they survive WhatsApp, Drive and email.
@@ -35,28 +35,41 @@ export function parseBackup(text: string): ParsedBackup {
   }
   const result = sanitizeGroups(d.groups);
   if (result.groups.length === 0) throw new Error(translate('backup.empty'));
-  return { ...result, exportedAt: typeof d.exportedAt === 'string' ? d.exportedAt : undefined };
+  // A file of a live group is a local copy on the phone that opens it.
+  return {
+    ...result,
+    groups: result.groups.map(localCopy),
+    exportedAt: typeof d.exportedAt === 'string' ? d.exportedAt : undefined,
+  };
 }
 
 export interface ImportPlan {
   added: Group[];
   replaced: { incoming: Group; local: Group; localIsNewer: boolean }[];
+  /** Copies of groups that are live on this phone: the live group stays as it is. */
+  keptLive: Group[];
 }
 
 /** What importing `incoming` would do, so the user can see it before saying yes. */
 export function planImport(existing: Group[], incoming: Group[]): ImportPlan {
   const byId = new Map(existing.map((g) => [g.id, g]));
-  const plan: ImportPlan = { added: [], replaced: [] };
+  const plan: ImportPlan = { added: [], replaced: [], keptLive: [] };
   for (const g of incoming) {
     const local = byId.get(g.id);
-    if (local) plan.replaced.push({ incoming: g, local, localIsNewer: local.updatedAt > g.updatedAt });
+    if (local?.online) plan.keptLive.push(g);
+    else if (local) plan.replaced.push({ incoming: g, local, localIsNewer: local.updatedAt > g.updatedAt });
     else plan.added.push(g);
   }
   return plan;
 }
 
-/** Imported groups replace local ones with the same id; the rest are added. */
+/**
+ * Imported groups replace local ones with the same id; the rest are added.
+ * A live group is never replaced by a file: the server has its real copy.
+ */
 export function mergeGroups(existing: Group[], incoming: Group[]) {
-  const incomingIds = new Set(incoming.map((g) => g.id));
-  return [...incoming, ...existing.filter((g) => !incomingIds.has(g.id))];
+  const live = new Set(existing.filter((g) => g.online).map((g) => g.id));
+  const taken = incoming.filter((g) => !live.has(g.id));
+  const incomingIds = new Set(taken.map((g) => g.id));
+  return [...taken, ...existing.filter((g) => !incomingIds.has(g.id))];
 }

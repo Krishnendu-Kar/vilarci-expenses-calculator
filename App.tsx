@@ -11,6 +11,7 @@ import { UndoProvider } from './src/context/UndoContext';
 import { MenuProvider } from './src/context/MenuContext';
 import { LockProvider } from './src/context/LockContext';
 import { AuthProvider } from './src/context/AuthContext';
+import { SyncProvider } from './src/context/SyncContext';
 import { RootNavigator } from './src/navigation/RootNavigator';
 
 export default function App() {
@@ -26,11 +27,13 @@ export default function App() {
                   <LockProvider>
                     <AuthProvider>
                       <UndoProvider>
-                        <MenuProvider>
-                          {/* The header bar is dark in both themes. */}
-                          <StatusBar style="light" />
-                          <RootNavigator />
-                        </MenuProvider>
+                        <SyncProvider>
+                          <MenuProvider>
+                            {/* The header bar is dark in both themes. */}
+                            <StatusBar style="light" />
+                            <RootNavigator />
+                          </MenuProvider>
+                        </SyncProvider>
                       </UndoProvider>
                     </AuthProvider>
                   </LockProvider>

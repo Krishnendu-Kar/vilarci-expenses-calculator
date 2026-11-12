@@ -4,6 +4,8 @@ import { ScreenContainer } from '../components/ScreenContainer';
 import { SectionLabel } from '../components/SectionLabel';
 import { SettingsRow } from '../components/SettingsRow';
 import { useGroups } from '../context/GroupsContext';
+import { useAuth } from '../context/AuthContext';
+import { AccountActions } from './profile/AccountSection';
 import { makeStyles, useTheme } from '../theme/ThemeContext';
 import { useI18n } from '../i18n/I18nContext';
 import { LANGS } from '../i18n';
@@ -14,6 +16,7 @@ import appConfig from '../../app.json';
 export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
   const styles = useStyles();
   const { bin } = useGroups();
+  const { user } = useAuth();
   const { pref } = useTheme();
   const { t, lang } = useI18n();
   const themeName = { system: t('appearance.system'), light: t('appearance.light'), dark: t('appearance.dark') }[pref];
@@ -23,6 +26,13 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
       <ScrollView contentContainerStyle={styles.content}>
         <SectionLabel>{t('settings.data')}</SectionLabel>
         <View style={styles.group}>
+          <SettingsRow
+            icon="logo-google"
+            title={t('backup.title')}
+            subtitle={t('backup.settingsSub')}
+            onPress={() => navigation.navigate('Backup')}
+          />
+          <View style={styles.divider} />
           <SettingsRow
             icon="cloud-upload-outline"
             title={t('export.title')}
@@ -63,12 +73,29 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
           />
           <View style={styles.divider} />
           <SettingsRow
+            icon="help-circle-outline"
+            title={t('welcome.howTo')}
+            subtitle={t('welcome.howToSub')}
+            onPress={() => navigation.navigate('Welcome')}
+          />
+          <View style={styles.divider} />
+          <SettingsRow
             icon="information-circle-outline"
             title={t('about.title')}
             subtitle={t('settings.aboutSub')}
             onPress={() => navigation.navigate('About')}
           />
         </View>
+
+        {/* Signed in: log out, or delete the account. */}
+        {user ? (
+          <>
+            <SectionLabel>{t('account.title')}</SectionLabel>
+            <View style={styles.group}>
+              <AccountActions />
+            </View>
+          </>
+        ) : null}
 
         {/* Pushes the version to the very bottom of the screen. */}
         <View style={styles.spacer} />

@@ -33,3 +33,15 @@ export function inviteCode(text: string): string | null {
 
 /** Is it a link to our site at all (so a broken code can say so, instead of "not ours")? */
 export const isOurLink = (text: string) => /^(?:https?:\/\/)?esplit\.vilarci\.in(?:[/?#]|$)/i.test(text.trim());
+
+/**
+ * A link that opened the app (https://esplit.vilarci.in/join/<code> as an
+ * App Link, or vesplit://join/<code>), as the path the navigator hands over:
+ * the code, '' for a join link with a broken code, or null when it isn't a
+ * join link at all.
+ */
+export function joinPathCode(path: string): string | null {
+  const rest = path.trim().replace(/^\/+/, '');
+  if (!/^join(?:[/?#]|$)/i.test(rest) && !/^\?c=/i.test(rest)) return null;
+  return inviteCode(`${INVITE_HOST}/${rest}`) ?? '';
+}

@@ -47,6 +47,11 @@ export const {
   saveDraft,
   clearDraft,
   adoptIds,
+  pendingSync,
+  finishSync,
+  adoptRemote,
+  outboxCounts,
+  loadEvents,
 } = store;
 export { EMPTY_PROFILE, type MeMap } from './db/store';
 

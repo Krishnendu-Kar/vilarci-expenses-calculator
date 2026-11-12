@@ -35,9 +35,9 @@ interface MenuValue {
 
 const MenuContext = createContext<MenuValue>({ openMenu: () => {} });
 
-const ITEM_H = 48;
-const HEAD_H = 40;
-const PAD = spacing(1.5);
+const ITEM_H = 38;
+const HEAD_H = 34;
+const PAD = spacing(1);
 const EDGE = spacing(2);
 
 interface Open {
@@ -142,7 +142,7 @@ function Card({ menu, screen, onPick }: { menu: Open; screen: { width: number; h
       <View style={styles.clip}>
         {sub ? (
           <Pressable onPress={() => setSub(null)} style={({ pressed }) => [styles.head, pressed && styles.pressed]} hitSlop={4}>
-            <Ionicons name="arrow-back" size={18} color={colors.textSecondary} />
+            <Ionicons name="arrow-back" size={16} color={colors.textSecondary} />
             <Text style={styles.headText} numberOfLines={1}>
               {sub.title}
             </Text>
@@ -155,11 +155,11 @@ function Card({ menu, screen, onPick }: { menu: Open; screen: { width: number; h
             style={({ pressed }) => [styles.item, pressed && styles.pressed]}
             accessibilityRole="menuitem"
           >
-            <Ionicons name={item.icon} size={20} color={item.danger ? colors.danger : colors.textSecondary} />
+            <Ionicons name={item.icon} size={17} color={item.danger ? colors.danger : colors.textSecondary} />
             <Text style={[styles.title, item.danger && styles.danger]} numberOfLines={1}>
               {item.title}
             </Text>
-            {item.children ? <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} /> : null}
+            {item.children ? <Ionicons name="chevron-forward" size={14} color={colors.textSecondary} /> : null}
           </Pressable>
         ))}
       </View>
@@ -170,7 +170,7 @@ function Card({ menu, screen, onPick }: { menu: Open; screen: { width: number; h
 const useStyles = makeStyles((c) => ({
   card: {
     position: 'absolute',
-    minWidth: 190,
+    minWidth: 150,
     backgroundColor: c.surface,
     borderRadius: radii.md,
     borderWidth: StyleSheet.hairlineWidth,
@@ -186,8 +186,8 @@ const useStyles = makeStyles((c) => ({
     height: HEAD_H,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing(2.5),
-    paddingHorizontal: spacing(4),
+    gap: spacing(2),
+    paddingHorizontal: spacing(3),
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: c.border,
   },
@@ -196,11 +196,11 @@ const useStyles = makeStyles((c) => ({
     height: ITEM_H,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing(3),
-    paddingLeft: spacing(4),
-    paddingRight: spacing(5),
+    gap: spacing(2.5),
+    paddingLeft: spacing(3),
+    paddingRight: spacing(4),
   },
   pressed: { backgroundColor: c.surfaceAlt },
-  title: { flexShrink: 1, fontSize: font.md, fontWeight: '500', color: c.textPrimary },
+  title: { flexShrink: 1, fontSize: font.sm + 1, fontWeight: '500', color: c.textPrimary },
   danger: { color: c.danger },
 }));

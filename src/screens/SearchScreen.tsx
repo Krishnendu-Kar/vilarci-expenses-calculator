@@ -30,7 +30,8 @@ export function SearchScreen({ navigation }: ScreenProps<'Search'>) {
   const [query, setQuery] = useState('');
   const q = query.trim();
 
-  const groupHits = useMemo(() => (q ? searchMembers(groups, q) : []), [groups, q]);
+  // Locked groups stay hidden here too, unless they're open right now.
+  const groupHits = useMemo(() => (q ? searchMembers(groups.filter((g) => isOpen(g.id)), q) : []), [groups, q, isOpen]);
   const peopleHits = useMemo(() => (q ? searchMembers(people, q) : []), [people, q]);
 
   return (

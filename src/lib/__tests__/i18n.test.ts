@@ -17,7 +17,7 @@ describe('translate', () => {
   it('fills placeholders and picks plurals', () => {
     assert.equal(translate('count.member', { count: 1 }), '1 member');
     assert.equal(translate('count.member', { count: 4 }), '4 members');
-    assert.equal(translate('settle.pays', { from: 'A', to: 'B' }), 'A pays B');
+    assert.equal(translate('settle.markedPaid', { from: 'A', to: 'B', amount: '₹5' }), 'A paid B ₹5');
   });
 
   it('treats 0 as singular in Hindi and Bengali', () => {

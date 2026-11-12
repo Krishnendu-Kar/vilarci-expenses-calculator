@@ -24,6 +24,15 @@ export async function signUp(name: string, email: string, password: string): Pro
   return { needsConfirm: !data.session };
 }
 
+/**
+ * The 6-digit code from the sign-up email (sent by Vilarci through Resend):
+ * confirms the email and signs you in, no link to open.
+ */
+export async function verifySignUpCode(email: string, code: string) {
+  const { error } = await supabase.auth.verifyOtp({ email: email.trim(), token: code.trim(), type: 'signup' });
+  if (error) throw error;
+}
+
 export async function signIn(email: string, password: string) {
   const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
   if (error) throw error;
@@ -45,9 +54,9 @@ export async function signOut() {
 }
 
 /** Your profile on the server; null if it isn't there (yet). */
-export async function fetchAccountProfile(): Promise<AccountProfile | null> {
-  // Row Level Security returns only your own row.
-  const { data, error } = await supabase.from('profiles').select('name, upi_ids').maybeSingle();
+export async function fetchAccountProfile(userId: string): Promise<AccountProfile | null> {
+  // People you share a live group with are readable too, so ask for yours.
+  const { data, error } = await supabase.from('profiles').select('name, upi_ids').eq('id', userId).maybeSingle();
   if (error) throw error;
   return data ? { name: typeof data.name === 'string' ? data.name : '', upiIds: sanitizeUpiIds(data.upi_ids) } : null;
 }

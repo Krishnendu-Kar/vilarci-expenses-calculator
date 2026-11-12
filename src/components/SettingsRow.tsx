@@ -13,24 +13,34 @@ interface Props {
   value?: string;
   /** A tick instead of the chevron: for pick-one lists. */
   checked?: boolean;
+  /** An action, not a page (Log out): no chevron. */
+  action?: boolean;
+  /** Red, for things like Delete account. */
+  danger?: boolean;
+  disabled?: boolean;
   onPress: () => void;
 }
 
 /** One tappable line in the Settings menu: icon, title, short hint, chevron. */
-export function SettingsRow({ icon, title, subtitle, value, checked, onPress }: Props) {
+export function SettingsRow({ icon, title, subtitle, value, checked, action, danger, disabled, onPress }: Props) {
   const styles = useStyles();
   const { colors } = useTheme();
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.row, pressed && styles.pressed]} accessibilityRole="button">
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={({ pressed }) => [styles.row, pressed && styles.pressed, disabled && styles.disabled]}
+      accessibilityRole="button"
+    >
       <View style={styles.iconWrap}>
-        <Ionicons name={icon} size={20} color={colors.tint} />
+        <Ionicons name={icon} size={20} color={danger ? colors.danger : colors.tint} />
       </View>
       <View style={styles.body}>
-        <Text style={styles.title}>{title}</Text>
+        <Text style={[styles.title, danger && { color: colors.danger }]}>{title}</Text>
         {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
       </View>
       {value ? <Text style={styles.value}>{value}</Text> : null}
-      {checked === undefined ? (
+      {action || danger ? null : checked === undefined ? (
         <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
       ) : checked ? (
         <Ionicons name="checkmark-circle" size={22} color={colors.tint} />
@@ -51,6 +61,7 @@ const useStyles = makeStyles((c) => ({
     backgroundColor: c.surface,
   },
   pressed: { backgroundColor: c.surfaceAlt },
+  disabled: { opacity: 0.5 },
   iconWrap: {
     width: 36,
     height: 36,

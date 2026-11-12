@@ -14,6 +14,7 @@ import {
   monthsWithExpenses,
   NO_FILTER,
   recurringFrom,
+  repeatExpenseId,
   withRepeat,
 } from '../months';
 import { expense, group } from './fixtures';
@@ -83,7 +84,7 @@ describe('applyRecurring', () => {
   const withRent = { ...base, expenses: [{ ...rent, recurringId: 'r1' }], recurring: [recurringFrom(rent, 'r1', 0)] };
 
   it('adds each month that has come due, on its day', () => {
-    const out = applyRecurring(withRent, new Date(2026, 9, 30), id);
+    const out = applyRecurring(withRent, new Date(2026, 9, 30));
     const added = out.expenses.filter((e) => e.id !== 'rent');
     assert.deepEqual(added.map((e) => e.date).sort(), ['2026-09-01', '2026-10-01']);
     assert.ok(added.every((e) => e.recurringId === 'r1' && e.amount === rent.amount));
@@ -92,20 +93,33 @@ describe('applyRecurring', () => {
 
   it("waits for the day, and changes nothing when nothing's due", () => {
     const late = { ...withRent, recurring: [{ ...withRent.recurring[0], day: 31, lastMonth: '2026-09' }] };
-    assert.equal(applyRecurring(late, new Date(2026, 9, 30), id), late);
-    const done = applyRecurring(withRent, new Date(2026, 9, 30), id);
-    assert.equal(applyRecurring(done, new Date(2026, 9, 31), id), done);
+    assert.equal(applyRecurring(late, new Date(2026, 9, 30)), late);
+    const done = applyRecurring(withRent, new Date(2026, 9, 30));
+    assert.equal(applyRecurring(done, new Date(2026, 9, 31)), done);
   });
 
   it('still adds months that an older version had closed', () => {
     const closed = { ...withRent, closedMonths: ['2026-09'] };
-    const out = applyRecurring(closed, new Date(2026, 9, 30), id);
+    const out = applyRecurring(closed, new Date(2026, 9, 30));
     assert.deepEqual(out.expenses.filter((e) => e.id !== 'rent').map((e) => e.date).sort(), ['2026-09-01', '2026-10-01']);
   });
 
   it('only runs for hostel and flat groups', () => {
     const trip = { ...withRent, kind: 'trip' as const };
-    assert.equal(applyRecurring(trip, new Date(2026, 9, 30), id), trip);
+    assert.equal(applyRecurring(trip, new Date(2026, 9, 30)), trip);
+  });
+
+  it('gives a month the same id on every phone, and skips one that came down from another phone', () => {
+    const a = applyRecurring(withRent, new Date(2026, 9, 30));
+    const b = applyRecurring(withRent, new Date(2026, 9, 30));
+    const ids = (g: Group) => g.expenses.filter((e) => e.id !== 'rent').map((e) => e.id).sort();
+    assert.deepEqual(ids(a), ids(b));
+    assert.deepEqual(ids(a), [repeatExpenseId('r1', '2026-09'), repeatExpenseId('r1', '2026-10')].sort());
+    // September's arrived from the server before this phone added it.
+    const synced = { ...withRent, expenses: [...withRent.expenses, a.expenses.find((e) => e.date === '2026-09-01')!] };
+    const out = applyRecurring(synced, new Date(2026, 9, 30));
+    assert.equal(out.expenses.filter((e) => e.recurringId === 'r1' && e.id !== 'rent').length, 2);
+    assert.equal(out.recurring![0].lastMonth, '2026-10');
   });
 });
 

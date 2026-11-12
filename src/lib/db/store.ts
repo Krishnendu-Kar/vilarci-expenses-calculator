@@ -1,4 +1,4 @@
-import type { Group, Person, Profile, UpiId } from '../../types';
+import type { Group, Person, Profile, Role, UpiId } from '../../types';
 import { sanitizeGroups, sanitizePeople } from '../migrate';
 import { sanitizePrefs, sanitizeVisits, type GroupPrefs, type Visits } from '../groupFilters';
 import { sanitizeBin, type BinItem } from '../bin';
@@ -6,7 +6,20 @@ import { sanitizeUpiIds } from '../upi';
 import { idMapper, oldIds, remapDraft, remapGroup } from '../legacyIds';
 import type { ExpenseDraft } from '../drafts';
 import { MIGRATIONS } from './schema';
-import { SELECTS, assembleGroups, insertRows, planGroups, type GroupTables, type SQLValue, type Saved, type Statement } from './rows';
+import {
+  SELECTS,
+  assembleGroups,
+  insertRows,
+  planGroups,
+  type GroupTables,
+  type SQLValue,
+  type Saved,
+  type Statement,
+  type SyncTable,
+} from './rows';
+import { changeFor, type Change, type SyncResponse } from '../sync/wire';
+import { applyIncoming, emptyIncoming, take, type Incoming } from '../sync/merge';
+import type { ActivityEvent } from '../activity';
 
 // Everything the app saves lives in one SQLite database. This module only
 // needs a small `Db` (expo-sqlite on the phone, node:sqlite in the tests)
@@ -62,9 +75,50 @@ const SETTING = {
   profilePerson: 'profile_person_id',
   upiIds: 'upi_ids',
   imported: 'legacy_imported_at',
+  clockOffset: 'clock_offset',
+  /** Per live group, the newest Activity line you've seen ({ groupId: seq }). */
+  activitySeen: 'activity_seen',
+  /** Co-members' UPI ids from their accounts ({ userId: UpiId[] }), for Settle offline. */
+  upiCache: 'upi_cache',
+  /** When the welcome pages were closed (they show once). */
+  welcomeSeen: 'welcome_seen',
+  /** Google Drive backup: the last one ({ at, size }) and auto backup every 0 / 1 / 7 days. */
+  driveLast: 'drive_last',
+  driveAuto: 'drive_auto',
 } as const;
 
-export type SettingKey = 'theme' | 'language';
+/** An upload waiting in the outbox. */
+export interface OutboxLine {
+  tbl: SyncTable;
+  group_id: string;
+  row_id: string;
+  op: 'upsert' | 'delete';
+  updated_at: number;
+}
+
+/** A change the server didn't take; the phone already has the server's version back. */
+export interface Refusal {
+  table: SyncTable;
+  groupId: string;
+  id: string;
+  reason: string;
+  detail?: string | null;
+}
+
+/** What one sync round did to the saved groups. */
+export interface SyncStep {
+  /** Groups the server changed: as saved before (`base`) and now (`next`). */
+  touched: Map<string, { base: Group; next: Group }>;
+  refused: Refusal[];
+  /** Another round is due: more pages to fetch, or uploads still waiting. */
+  again: boolean;
+  /** Groups you're active in that this phone doesn't have yet. */
+  unknown: { id: string; role: Role }[];
+}
+
+const lineKey = (table: string, groupId: string, id: string) => `${table}\n${groupId}\n${id}`;
+
+export type SettingKey = 'theme' | 'language' | 'activitySeen' | 'upiCache' | 'welcomeSeen' | 'driveLast' | 'driveAuto';
 
 const parseJson = (raw: string | null | undefined): unknown => {
   if (!raw) return null;
@@ -103,13 +157,22 @@ function savedList(groups: Group[], bin: BinItem[]): Saved[] {
 
 const toMap = (list: Saved[]) => new Map(list.map((s) => [s.group.id, s]));
 
-export function createStore(open: () => Promise<Db>, readLegacy: () => Promise<LegacyData>, newId: () => string) {
+export function createStore(
+  open: () => Promise<Db>,
+  readLegacy: () => Promise<LegacyData>,
+  newId: () => string,
+  clock: () => number = Date.now,
+) {
   let opened: Promise<Db> | null = null;
   // One thing at a time: a transaction must never interleave with another query.
   let queue: Promise<unknown> = Promise.resolve();
   // What the database holds now, to save only what changed.
   let savedGroups = new Map<string, Saved>();
   let savedPeople = new Map<string, Person>();
+  // The server's clock minus this phone's, from the last sync. Edit times are
+  // in server time, so a phone with a wrong clock doesn't win or lose
+  // last-write-wins unfairly (onlinedb.md §9.4).
+  let clockOffset = 0;
 
   function serial<T>(fn: (db: Db) => Promise<T>): Promise<T> {
     const run = queue.then(async () => fn(await (opened ??= init())));
@@ -130,6 +193,7 @@ export function createStore(open: () => Promise<Db>, readLegacy: () => Promise<L
     }
     const done = await db.all<{ value: string }>('SELECT value FROM settings WHERE key = ?', [SETTING.imported]);
     if (!done.length) await importLegacy(db, await readLegacy());
+    clockOffset = Number(await getSetting(db, SETTING.clockOffset)) || 0;
     return db;
   }
 
@@ -270,13 +334,179 @@ export function createStore(open: () => Promise<Db>, readLegacy: () => Promise<L
         };
       }),
 
-    /** Groups and the Bin together: moving a group to the Bin is one change. */
+    /**
+     * Groups and the Bin together: moving a group to the Bin is one change.
+     * Changes to live groups also go in the outbox, in the same transaction.
+     */
     saveGroups: (groups: Group[], bin: BinItem[]) =>
       serial(async (db) => {
         const next = savedList(groups, bin);
-        const statements = planGroups(savedGroups, next);
+        const statements = planGroups(savedGroups, next, { now: clock() + clockOffset });
         if (statements.length) await db.transaction(() => runAll(db, statements));
         savedGroups = toMap(next);
+      }),
+
+    /** The next uploads (built from the saved groups) and the bookmarks of your live groups. */
+    pendingSync: (limit = 200) =>
+      serial(async (db) => {
+        const lines = await db.all<OutboxLine>(
+          'SELECT tbl, group_id, row_id, op, updated_at FROM outbox ORDER BY updated_at, rowid LIMIT ?',
+          [limit],
+        );
+        const rows = await db.all<{ group_id: string; cursor: number }>(
+          "SELECT group_id, cursor FROM online_groups WHERE status = 'active'",
+        );
+        const changes: Change[] = lines.map((l) => changeFor(l, savedGroups.get(l.group_id)?.group));
+        return { lines, changes, cursors: Object.fromEntries(rows.map((r) => [r.group_id, r.cursor])) };
+      }),
+
+    /**
+     * The server's answer to one sync call, saved in one transaction: uploads
+     * it took leave the outbox, ones it refused are put back to its version,
+     * and what changed after each bookmark goes in. Nothing here is queued,
+     * so nothing goes back up. `offset`: server clock minus this phone's.
+     */
+    finishSync: (sent: OutboxLine[], res: SyncResponse, offset: number) =>
+      serial(async (db): Promise<SyncStep> => {
+        const sentAt = new Map(sent.map((l) => [lineKey(l.tbl, l.group_id, l.row_id), l.updated_at]));
+        const incoming = new Map<string, Incoming>();
+        const into = (groupId: string) => {
+          let d = incoming.get(groupId);
+          if (!d) incoming.set(groupId, (d = emptyIncoming()));
+          return d;
+        };
+        const refused: Refusal[] = [];
+        const touched = new Map<string, { base: Group; next: Group }>();
+        let again = false;
+        let next: Saved[] | null = null;
+
+        await db.transaction(async () => {
+          // 1. Answers to the uploads. A line changed again meanwhile stays for the next round.
+          const waiting = await db.all<OutboxLine>('SELECT tbl, group_id, row_id, updated_at FROM outbox');
+          const nowAt = new Map(waiting.map((l) => [lineKey(l.tbl, l.group_id, l.row_id), l.updated_at]));
+          for (const r of res.results ?? []) {
+            const k = lineKey(r.table, r.group_id, r.id);
+            const at = sentAt.get(k);
+            if (at === undefined || nowAt.get(k) !== at) continue;
+            await db.run('DELETE FROM outbox WHERE tbl = ? AND group_id = ? AND row_id = ?', [r.table, r.group_id, r.id]);
+            nowAt.delete(k);
+            if (r.status !== 'rejected') continue;
+            refused.push({ table: r.table, groupId: r.group_id, id: r.id, reason: r.reason ?? 'invalid', detail: r.detail });
+            // Not a member (any more), or no such group: the group list below says what happened.
+            if (r.reason !== 'not_member' && r.reason !== 'no_group' && savedGroups.has(r.group_id)) {
+              take(into(r.group_id), r.table, r.current ?? null, r.id);
+            }
+          }
+
+          // 2. Downloads. Items still waiting to go up keep this phone's version;
+          // the upload settles it.
+          for (const p of res.changes ?? []) {
+            if (!savedGroups.has(p.group_id)) continue;
+            const d = into(p.group_id);
+            const mine = [...nowAt.keys()].map((k) => k.split('\n')).filter(([, g]) => g === p.group_id);
+            const waitingHere = (table: string, id: string) => mine.some(([t, , i]) => t === table && i === id);
+            if (p.full) d.replace = new Set(mine.map(([, , i]) => i));
+            if (p.group) take(d, 'groups', p.group, p.group_id);
+            for (const t of ['members', 'expenses', 'payments', 'recurring'] as const) {
+              for (const row of p[t] ?? []) {
+                const id = String(row.id);
+                if (!waitingHere(t, id)) take(d, t, row, id);
+              }
+            }
+            const events = (p.events ?? []).map((e) => [
+              p.group_id,
+              String(e.id),
+              String(e.type),
+              typeof e.actor === 'string' ? e.actor : null,
+              JSON.stringify(e.data ?? {}),
+              Number(e.created_at),
+              Number(e.seq),
+            ]);
+            await runAll(db, insertRows('events', ['group_id', 'id', 'type', 'actor', 'data', 'created_at', 'seq'], events));
+            await db.run('UPDATE online_groups SET cursor = ? WHERE group_id = ?', [p.cursor, p.group_id]);
+            if (p.more) again = true;
+          }
+
+          // 3. Your place in each live group: still in, left, removed, or the group is gone.
+          const listed = new Map((res.groups ?? []).map((m) => [m.id, m]));
+          for (const [groupId, s] of savedGroups) {
+            const o = s.group.online;
+            const m = listed.get(groupId);
+            if (!o || !m) continue;
+            const status = m.status === 'none' ? 'gone' : m.status;
+            const role = m.status === 'active' ? (m.role ?? null) : null;
+            if (status !== o.status || role !== o.role) into(groupId).online = { status, role };
+          }
+
+          // 4. Saved without queueing anything: it came from the server.
+          const stamp = clock();
+          for (const [groupId, d] of incoming) {
+            const s = savedGroups.get(groupId);
+            if (!s) continue;
+            const g = applyIncoming(s.group, d, stamp);
+            if (g !== s.group) touched.set(groupId, { base: s.group, next: g });
+          }
+          if (touched.size) {
+            next = [...savedGroups.values()].map((s) => (touched.has(s.group.id) ? { ...s, group: touched.get(s.group.id)!.next } : s));
+            await runAll(db, planGroups(savedGroups, next));
+          }
+          await setSetting(db, SETTING.clockOffset, String(offset));
+          if (nowAt.size) again = true;
+        });
+
+        if (next) savedGroups = toMap(next);
+        clockOffset = offset;
+        const unknown = (res.groups ?? [])
+          .filter((m) => m.status === 'active' && !savedGroups.has(m.id))
+          .map((m) => ({ id: m.id, role: m.role ?? ('member' as const) }));
+        return { touched, refused, again, unknown };
+      }),
+
+    /**
+     * Groups exactly as the server has them (just put online, or just
+     * joined): saved without queueing anything, with their bookmarks.
+     */
+    adoptRemote: (groups: Group[], cursors: Record<string, number>) =>
+      serial(async (db) => {
+        const ids = new Set(groups.map((g) => g.id));
+        const next = [
+          ...groups.map((group) => ({ group, binnedAt: null })),
+          ...[...savedGroups.values()].filter((s) => !ids.has(s.group.id)),
+        ];
+        await db.transaction(async () => {
+          await runAll(db, planGroups(savedGroups, next));
+          for (const [groupId, cursor] of Object.entries(cursors)) {
+            await db.run('UPDATE online_groups SET cursor = ? WHERE group_id = ?', [cursor, groupId]);
+          }
+        });
+        savedGroups = toMap(next);
+      }),
+
+    /** A live group's Activity as it came down with the syncs, newest first (§18). */
+    loadEvents: (groupId: string, limit = 500) =>
+      serial(async (db): Promise<ActivityEvent[]> => {
+        const rows = await db.all<{ id: string; type: string; actor: string | null; data: string; created_at: number; seq: number }>(
+          'SELECT id, type, actor, data, created_at, seq FROM events WHERE group_id = ? ORDER BY seq DESC, created_at DESC LIMIT ?',
+          [groupId, limit],
+        );
+        return rows.map((r) => {
+          const data = parseJson(r.data);
+          return {
+            id: r.id,
+            type: r.type,
+            actor: r.actor,
+            data: isObj(data) ? data : {},
+            createdAt: r.created_at,
+            seq: r.seq,
+          };
+        });
+      }),
+
+    /** How many changes wait to go up, per group (the "3 changes waiting" note, §9.8). */
+    outboxCounts: () =>
+      serial(async (db) => {
+        const rows = await db.all<{ group_id: string; n: number }>('SELECT group_id, COUNT(*) AS n FROM outbox GROUP BY group_id');
+        return Object.fromEntries(rows.map((r) => [r.group_id, r.n])) as Record<string, number>;
       }),
 
     savePeople: (people: Person[]) =>

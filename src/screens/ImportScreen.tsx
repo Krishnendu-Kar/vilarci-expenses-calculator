@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '../components/ScreenContainer';
@@ -7,6 +7,7 @@ import { useGroups } from '../context/GroupsContext';
 import { parseBackup, planImport, type ImportPlan } from '../lib/backup';
 import { adoptIds } from '../lib/storage';
 import { pickTextFile } from '../lib/files';
+import { takeRestoreFile } from '../lib/drive';
 import { groupTotal } from '../lib/split';
 import { money } from '../lib/money';
 import { shortDate } from '../lib/format';
@@ -34,11 +35,21 @@ export function ImportScreen({ navigation }: ScreenProps<'Import'>) {
   const [pending, setPending] = useState<Pending | null>(null);
   const [done, setDone] = useState<string | null>(null);
 
-  const pick = async () => {
+  // A backup restored from Google Drive (Settings → Google Drive backup).
+  useEffect(() => {
+    const file = takeRestoreFile();
+    if (file) void open(async () => file);
+    // Only when the page opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const pick = () => open(pickTextFile);
+
+  const open = async (get: () => Promise<{ name: string; text: string } | null>) => {
     setBusy(true);
     setDone(null);
     try {
-      const file = await pickTextFile();
+      const file = await get();
       if (!file) return;
       const parsed = parseBackup(file.text);
       // Files from before 1.2 have short ids: they become the UUIDs used here.

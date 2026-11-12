@@ -13,6 +13,36 @@ export type CategoryKey = 'food' | 'travel' | 'stay' | 'groceries' | 'fun' | 'sh
 export interface Member {
   id: string;
   name: string;
+  /** Live groups only: their role. Absent in a local group. */
+  role?: Role;
+  /** Live groups only: has an account (and the id is the account id). Otherwise a guest. */
+  account?: boolean;
+  /**
+   * Live groups only: no longer in the group. Kept, so old expenses still
+   * show their name (onlinedb.md §17).
+   */
+  gone?: 'left' | 'removed' | 'merged';
+}
+
+export type Role = 'creator' | 'admin' | 'member';
+
+/** Who may do what in a live group (§14). `admins`: admins and the creator only. */
+export interface GroupSettings {
+  editInfo: 'all' | 'admins';
+  addExpenses: 'all' | 'admins';
+  addGuests: 'all' | 'admins';
+  requireApproval: boolean;
+}
+
+/** A group that lives on the server too (2.0), and your place in it. */
+export interface OnlineInfo {
+  /** Your role. Null once you're no longer an active member. */
+  role: Role | null;
+  /** active, or why you can only read it now. gone: the server has no such group any more. */
+  status: 'active' | 'left' | 'removed' | 'gone';
+  settings: GroupSettings;
+  /** Deleted for everyone by an admin; admins can restore it for 30 days. */
+  deletedAt?: number;
 }
 
 /** Someone in the People directory (this phone only). */
@@ -114,6 +144,8 @@ export interface Group {
   closedMonths?: string[];
   /** Hostel/flat groups: expenses that repeat every month. */
   recurring?: Recurring[];
+  /** Present when the group is online (shared live with its members). */
+  online?: OnlineInfo;
   createdAt: number;
   updatedAt: number;
 }

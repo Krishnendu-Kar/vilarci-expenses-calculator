@@ -1,4 +1,6 @@
 import type { Group, Member, Person, Profile } from '../types';
+import type { BinItem } from './bin';
+import { remapGroup } from './legacyIds';
 import { computeBalances, isSettled } from './split';
 
 // The People directory: everyone from every group, once. A member's id is
@@ -22,8 +24,10 @@ export function reconcilePeople(groups: Group[], people: Person[]): { groups: Gr
       added.push(p);
     }
   }
+  // A live group keeps the names it has: they're the group's, shared with
+  // everyone in it, not this phone's nicknames.
   const synced = groups.map((g) =>
-    g.members.every((m) => byId.get(m.id)!.name === m.name)
+    g.online || g.members.every((m) => byId.get(m.id)!.name === m.name)
       ? g
       : { ...g, members: g.members.map((m) => ({ ...m, name: byId.get(m.id)!.name })) },
   );
@@ -92,6 +96,44 @@ export function resolveMe(group: Group, profile: Profile, picked?: string | null
   if (!n) return null;
   const same = group.members.filter((m) => m.name.toLowerCase() === n);
   return same.length === 1 ? same[0].id : null;
+}
+
+export interface PeopleState {
+  groups: Group[];
+  bin: BinItem[];
+  people: Person[];
+  meMap: Record<string, string>;
+  profile: Profile;
+}
+
+/**
+ * Signed in: the person you are on this phone takes your account id, in every
+ * group, the Bin, the directory and "who is me" (onlinedb.md §11.4). Live
+ * groups know you by that id, so a group must have it before it goes online.
+ * A group that somehow has both ids is left alone, and so is a live group
+ * (the server already knows everyone in it by id). Unchanged parts keep
+ * their identity.
+ */
+export function adoptAccountId(s: PeopleState, personId: string, accountId: string): PeopleState {
+  if (personId === accountId) return s;
+  const idFor = (id: string) => (id === personId ? accountId : id);
+  const move = (g: Group) =>
+    !g.online && g.members.some((m) => m.id === personId) && !g.members.some((m) => m.id === accountId)
+      ? remapGroup(g, idFor)
+      : g;
+  const taken = s.people.some((p) => p.id === accountId);
+  return {
+    groups: s.groups.map(move),
+    bin: s.bin.map((b) => {
+      const group = move(b.group);
+      return group === b.group ? b : { ...b, group };
+    }),
+    people: taken ? s.people.filter((p) => p.id !== personId) : s.people.map((p) => (p.id === personId ? { ...p, id: accountId } : p)),
+    meMap: Object.values(s.meMap).includes(personId)
+      ? Object.fromEntries(Object.entries(s.meMap).map(([g, m]) => [g, idFor(m)]))
+      : s.meMap,
+    profile: s.profile.personId === personId ? { ...s.profile, personId: accountId } : s.profile,
+  };
 }
 
 /**
