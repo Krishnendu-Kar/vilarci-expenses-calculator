@@ -4,7 +4,11 @@
  * saying so, Android reads the CAMERA and USE_FINGERPRINT permissions as
  * "this app needs a rear camera and a fingerprint sensor", and Play hides
  * the app from devices without them (most Chromebooks, car screens, some
- * tablets). Each feature is declared here as not required.
+ * tablets). Same for Wi-Fi (netinfo's ACCESS_WIFI_STATE implies it; the
+ * "No internet" bar only needs to know if there's a connection) and the
+ * touchscreen (Play assumes one unless told otherwise; on a Chromebook
+ * without one, a mouse or trackpad taps just as well). Each feature is
+ * declared here as not required.
  */
 const { withAndroidManifest } = require('expo/config-plugins');
 
@@ -13,6 +17,8 @@ const OPTIONAL = [
   'android.hardware.camera.any',
   'android.hardware.camera.autofocus',
   'android.hardware.fingerprint',
+  'android.hardware.wifi',
+  'android.hardware.touchscreen',
 ];
 
 module.exports = function withOptionalFeatures(config) {

@@ -257,7 +257,7 @@ The app version is shown at the bottom of Settings.
 
 | Platform | Status |
 |---|---|
-| Android (Expo Go, SDK 58; Play Store build) | Supported |
+| Android (Expo Go, SDK 58; Play Store build) | Supported, Android 7.0 and up. Phones, tablets, Chromebooks and car screens: the camera, fingerprint, Wi-Fi and touchscreen are all optional (from 2.1.0). |
 | iOS (Expo Go, SDK 58) | Supported |
 | Web browser (`npm run web`) | Supported. Sharing falls back to download, print and clipboard. |
 
@@ -273,6 +273,8 @@ The app version is shown at the bottom of Settings.
 | **1.4.0** (in progress) | Optional **accounts** (email and password): name and UPI ids kept with the account, log out, delete account. Continue with Google and Google Drive backup come next. |
 | **1.3.0** (in progress) | Hostel groups open on this month with **all-time** Members and Settle; a **filter** for month and category (Stats follows it); **Counts for** month on each expense; no more locked months; **group lock** with fingerprint or screen lock; **UPI ids** in Profile, Settle and reports; **‹ ›** to step months on the group page; a one-page, redesigned **Add expense** with **Paste from chat** and **Convert** (no more tabs). |
 
+| **2.0.0** (Play Store, November 2026) | **Live groups** (everyone sees the same expenses on their own phone), invite by link or QR, admins and roles, Activity, **Pay by UPI**, sign in with Google or email, Google Drive backup, add people from contacts, the Balances tab. |
+| **2.1.0** (built, November 2026) | WhatsApp-style names (`~Name` until you save one) and a member's verified email; New group **On this device / Online** with drafts; **No internet / Slow internet** bar and groups that go online by themselves when you're back; "You" in your groups, an invite button, a total you can fold away, Move to bin in the group menu. Fixes: the keyboard covering inputs, linked guests counted twice, Guest shown on everyone in Balances, removing people. Monthly repeats removed. More Chromebooks and tablets. |
 ---
 
 ## 14. Coming next
