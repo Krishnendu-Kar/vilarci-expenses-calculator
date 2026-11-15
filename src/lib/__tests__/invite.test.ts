@@ -1,7 +1,7 @@
 /// <reference types="node" />
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { inviteCode, isOurLink, joinPathCode } from '../invite';
+import { inviteCode, isOurLink, joinPathCode, referrerCode } from '../invite';
 
 describe('invite links', () => {
   it('reads the code from /join/<code> and ?c=, like the website', () => {
@@ -44,5 +44,21 @@ describe('links that open the app', () => {
     assert.equal(joinPathCode(''), null);
     assert.equal(joinPathCode('privacy'), null);
     assert.equal(joinPathCode('joinery/K7QM2XPA'), null);
+  });
+});
+
+describe('installs from an invite (Play Store referrer)', () => {
+  it('reads the code the website put in the Play link', () => {
+    assert.equal(referrerCode('join=K7QM2XPA'), 'K7QM2XPA');
+    assert.equal(referrerCode('join%3DK7QM2XPA'), 'K7QM2XPA', 'still encoded');
+    assert.equal(referrerCode('utm_source=x&join=k7qm-2xpa'), 'K7QM2XPA', 'among other params, lower case, a dash');
+  });
+
+  it('nothing for other installs or broken codes', () => {
+    assert.equal(referrerCode('utm_source=google-play&utm_medium=organic'), null);
+    assert.equal(referrerCode(''), null);
+    assert.equal(referrerCode('join=K7QM2XP0'), null, '0 is never used');
+    assert.equal(referrerCode('join='), null);
+    assert.equal(referrerCode('join=%E0%A4'), null, 'bad encoding');
   });
 });

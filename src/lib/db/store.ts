@@ -82,6 +82,12 @@ const SETTING = {
   upiCache: 'upi_cache',
   /** When the welcome pages were closed (they show once). */
   welcomeSeen: 'welcome_seen',
+  /** When the Play Store was asked for an invite code kept through the install (asked once). */
+  installChecked: 'install_referrer_checked',
+  /** The server's word on outdated versions, for offline starts (JSON, see lib/appRelease). */
+  appRelease: 'app_release',
+  /** When the outdated warning and Play's update dialog were last shown ({ warnDay, playAt }). */
+  updateAsked: 'update_asked',
   /** Google Drive backup: the last one ({ at, size }) and auto backup every 0 / 1 / 7 days. */
   driveLast: 'drive_last',
   driveAuto: 'drive_auto',
@@ -128,6 +134,9 @@ export type SettingKey =
   | 'activitySeen'
   | 'upiCache'
   | 'welcomeSeen'
+  | 'installChecked'
+  | 'appRelease'
+  | 'updateAsked'
   | 'driveLast'
   | 'driveAuto'
   | 'onlineQueue'

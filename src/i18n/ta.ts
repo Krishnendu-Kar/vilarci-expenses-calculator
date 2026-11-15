@@ -574,7 +574,13 @@ export const ta: Dict = {
   'upi.duplicate': 'இந்த UPI ஐடி ஏற்கனவே சேமிக்கப்பட்டுள்ளது.',
   'upi.copy': '{id} நகலெடு',
   'upi.copied': '{id} நகலெடுக்கப்பட்டது',
-  'upi.remove': '{id} நீக்கு',
+  'upi.addShort': 'சேர்',
+  'upi.editTitle': 'UPI ஐடியைத் திருத்து',
+  'upi.edit': 'திருத்து',
+  'upi.removeItem': 'நீக்கு',
+  'upi.removeTitle': '{id} ஐ நீக்கவா?',
+  'upi.removeBody': 'கணக்கு பகுதியிலும் புதிய அறிக்கைகளிலும் இது இனி தெரியாது.',
+  'upi.empty': 'இன்னும் UPI ஐடி இல்லை. உங்களுக்கு எங்கே பணம் அனுப்புவது என்று மக்கள் அறிய ஒன்றைச் சேர்க்கவும்.',
   'upi.removed': '{id} நீக்கப்பட்டது',
   'account.title': 'பயனர் கணக்கு',
   'account.signIn': 'உள்நுழை',
@@ -751,6 +757,17 @@ export const ta: Dict = {
   'bin.deleteNow': 'இப்போதே நீக்கு',
   'bin.deleteTitle': '"{name}" ஐ நிரந்தரமாக நீக்கவா?',
   'bin.deleteBody': 'அதுவும் அதன் எல்லாச் செலவுகளும் இந்தத் தொலைபேசியிலிருந்து நீக்கப்படும். இதைத் திரும்பப் பெற முடியாது.',
+
+  // ---- outdated versions ----
+  'update.warnTitle': 'ஆப்பைப் புதுப்பிக்கவும்',
+  'update.warnBody': '{date} முதல் இந்தப் பதிப்பு ({version}) பழையதாகி வேலை செய்யாது. Vilarci E-Split-ஐத் தொடர்ந்து பயன்படுத்த {min} அல்லது புதிய பதிப்புக்குப் புதுப்பிக்கவும்.',
+  'update.neededTitle': 'புதுப்பிக்கும் நேரம்',
+  'update.neededBody': '{date} முதல் இந்தப் பதிப்பு பழையதாகிவிட்டது. Vilarci E-Split-ஐத் தொடர்ந்து பயன்படுத்த Play Store-க்குச் சென்று புதுப்பிக்கவும்.',
+  'update.safe': 'உங்கள் குழுக்கள் இந்தத் தொலைபேசியில் பாதுகாப்பாக உள்ளன, புதுப்பித்த பிறகும் இருக்கும்.',
+  'update.yours': 'இந்தத் தொலைபேசி',
+  'update.required': 'தேவை',
+  'update.store': 'Play Store-ஐத் திற',
+  'update.later': 'பிறகு',
 
   // ---- error page ----
   'error.title': 'ஏதோ தவறு நடந்துவிட்டது',

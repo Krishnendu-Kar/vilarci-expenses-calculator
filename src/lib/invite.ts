@@ -31,6 +31,31 @@ export function inviteCode(text: string): string | null {
   return CODE.test(code) ? code : null;
 }
 
+/**
+ * The invite code the Play Store kept through the install: the website's
+ * "Get it on Google Play" link carries `referrer=join%3D<code>`, and Play
+ * hands back `join=<code>` (still encoded on some phones). Null for any other
+ * install ("utm_source=google-play&utm_medium=organic") or a broken code.
+ */
+export function referrerCode(referrer: string): string | null {
+  let s = referrer.trim();
+  try {
+    if (!s.includes('=')) s = decodeURIComponent(s);
+  } catch {
+    return null;
+  }
+  const part = s.split('&').find((p) => p.toLowerCase().startsWith('join='));
+  if (!part) return null;
+  let raw: string;
+  try {
+    raw = decodeURIComponent(part.slice(5));
+  } catch {
+    return null;
+  }
+  const code = clean(raw);
+  return CODE.test(code) ? code : null;
+}
+
 /** Is it a link to our site at all (so a broken code can say so, instead of "not ours")? */
 export const isOurLink = (text: string) => /^(?:https?:\/\/)?esplit\.vilarci\.in(?:[/?#]|$)/i.test(text.trim());
 

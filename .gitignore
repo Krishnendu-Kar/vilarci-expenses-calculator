@@ -178,3 +178,6 @@ WORKFLOW.md
 
 # Play Console answers and release checklist (local only)
 PLAY_CONSOLE.md
+
+# How to mark app versions outdated (app_release table) (local only)
+app_release.md

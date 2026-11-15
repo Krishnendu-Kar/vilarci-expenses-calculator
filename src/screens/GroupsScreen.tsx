@@ -21,6 +21,7 @@ import { useLock } from '../context/LockContext';
 import { useSync } from '../context/SyncContext';
 import { getLastBackup, loadSetting } from '../lib/storage';
 import { autoBackupIfDue } from '../lib/autoBackup';
+import { installInviteCode } from '../lib/installReferrer';
 import { usePutOnline } from './group/usePutOnline';
 import { savedNames } from '../lib/people';
 import { askOwner, lockSupport } from '../lib/deviceLock';
@@ -105,12 +106,20 @@ export function GroupsScreen({ navigation }: TabProps<'Home'>) {
     };
   }, []);
 
-  // First start: the welcome pages, once.
+  // First start: the welcome pages, once. Installed from an invite link
+  // (Play kept the code), Join opens instead and the welcome waits for the
+  // next start; so does it when the link itself opened the app on Join.
   useEffect(() => {
     let current = true;
     loadSetting('welcomeSeen')
-      .then((seen) => {
-        if (current && !seen) navigation.navigate('Welcome');
+      .then(async (seen) => {
+        if (seen) return;
+        const code = await installInviteCode();
+        if (!current) return;
+        const joining = navigation.getParent()?.getState()?.routes.some((r) => r.name === 'Join');
+        if (joining) return;
+        if (code) navigation.navigate('Join', { code });
+        else navigation.navigate('Welcome');
       })
       .catch(() => {});
     return () => {

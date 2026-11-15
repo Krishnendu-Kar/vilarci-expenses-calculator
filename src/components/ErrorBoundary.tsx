@@ -6,11 +6,8 @@ import { PrimaryButton } from './PrimaryButton';
 import { makeStyles, useTheme } from '../theme/ThemeContext';
 import { useI18n } from '../i18n/I18nContext';
 import { font, radii, spacing } from '../theme/tokens';
-import { loadRawGroups } from '../lib/storage';
-import { buildBackup } from '../lib/backup';
-import { sanitizeGroups } from '../lib/migrate';
-import { shareMessage, shareTextFile } from '../lib/files';
-import { todayISO } from '../lib/format';
+import { exportSavedData } from '../lib/rescueExport';
+import { shareMessage } from '../lib/files';
 import { notify } from '../lib/confirm';
 import appConfig from '../../app.json';
 
@@ -73,16 +70,7 @@ function ErrorScreen({ error, onRetry }: { error: Error; onRetry: () => void }) 
   const exportData = async () => {
     setBusy(true);
     try {
-      const raw = await loadRawGroups();
-      if (!raw) return notify(t('error.noData'), t('error.noDataBody'));
-      let content = raw;
-      try {
-        const groups = sanitizeGroups(JSON.parse(raw)?.groups).groups;
-        if (groups.length) content = buildBackup(groups);
-      } catch {
-        // Unreadable: share it exactly as stored so nothing is lost.
-      }
-      await shareTextFile(`vilarci-e-split-backup-${todayISO()}.json`, content, 'application/json');
+      if (!(await exportSavedData())) notify(t('error.noData'), t('error.noDataBody'));
     } catch (e) {
       notify(t('export.failed'), e instanceof Error ? e.message : String(e));
     } finally {

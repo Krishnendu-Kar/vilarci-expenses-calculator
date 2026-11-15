@@ -575,7 +575,13 @@ export const en = {
   'upi.duplicate': 'You already saved this UPI id.',
   'upi.copy': 'Copy {id}',
   'upi.copied': 'Copied {id}',
-  'upi.remove': 'Remove {id}',
+  'upi.addShort': 'Add',
+  'upi.editTitle': 'Edit UPI id',
+  'upi.edit': 'Edit',
+  'upi.removeItem': 'Remove',
+  'upi.removeTitle': 'Remove {id}?',
+  'upi.removeBody': "People won't see it in Settle or in new reports.",
+  'upi.empty': 'No UPI ids yet. Add one so people know where to pay you.',
   'upi.removed': '{id} removed',
   'account.title': 'Account',
   'account.signIn': 'Sign in',
@@ -751,6 +757,17 @@ export const en = {
   'bin.deleteNow': 'Delete now',
   'bin.deleteTitle': 'Delete "{name}" for good?',
   'bin.deleteBody': "It and all its expenses are removed from this phone. This can't be undone.",
+
+  // ---- outdated versions ----
+  'update.warnTitle': 'Please update the app',
+  'update.warnBody': 'From {date}, this version ({version}) is out of date and stops working. Update to {min} or newer to keep using Vilarci E-Split.',
+  'update.neededTitle': 'Time to update',
+  'update.neededBody': 'Since {date}, this version is out of date. Go to the Play Store and update to keep using Vilarci E-Split.',
+  'update.safe': 'Your groups are safe on this phone and stay after the update.',
+  'update.yours': 'This phone',
+  'update.required': 'Needed',
+  'update.store': 'Open Play Store',
+  'update.later': 'Later',
 
   // ---- error page ----
   'error.title': 'Something went wrong',

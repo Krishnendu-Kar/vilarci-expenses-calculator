@@ -6,6 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
 import { I18nProvider, useI18n } from './src/i18n/I18nContext';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
+import { UpdateGate } from './src/components/UpdateGate';
 import { GroupsProvider } from './src/context/GroupsContext';
 import { UndoProvider } from './src/context/UndoContext';
 import { MenuProvider } from './src/context/MenuContext';
@@ -22,27 +23,30 @@ export default function App() {
         <ThemeProvider>
           <I18nProvider>
             <Gate>
-              {/* Inside the theme and language, so even the error page matches the app. */}
-              <ErrorBoundary>
-                <GroupsProvider>
-                  <LockProvider>
-                    <AuthProvider>
-                      <UndoProvider>
-                        <SyncProvider>
-                          <MenuProvider>
-                            {/* The header bar is dark in both themes. */}
-                            <StatusBar style="light" />
-                            {/* "No internet" / "Slow internet" at the very bottom, under the tab bar. */}
-                            <NetBannerLayout>
-                              <RootNavigator />
-                            </NetBannerLayout>
-                          </MenuProvider>
-                        </SyncProvider>
-                      </UndoProvider>
-                    </AuthProvider>
-                  </LockProvider>
-                </GroupsProvider>
-              </ErrorBoundary>
+              {/* Outdated versions: a daily warning, or the Update needed page instead of the app. */}
+              <UpdateGate>
+                {/* Inside the theme and language, so even the error page matches the app. */}
+                <ErrorBoundary>
+                  <GroupsProvider>
+                    <LockProvider>
+                      <AuthProvider>
+                        <UndoProvider>
+                          <SyncProvider>
+                            <MenuProvider>
+                              {/* The header bar is dark in both themes. */}
+                              <StatusBar style="light" />
+                              {/* "No internet" / "Slow internet" at the very bottom, under the tab bar. */}
+                              <NetBannerLayout>
+                                <RootNavigator />
+                              </NetBannerLayout>
+                            </MenuProvider>
+                          </SyncProvider>
+                        </UndoProvider>
+                      </AuthProvider>
+                    </LockProvider>
+                  </GroupsProvider>
+                </ErrorBoundary>
+              </UpdateGate>
             </Gate>
           </I18nProvider>
         </ThemeProvider>

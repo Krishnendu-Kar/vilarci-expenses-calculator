@@ -2,7 +2,7 @@
 
 Vilarci E-Split helps a group of people share costs fairly: friends on a trip, students sharing a hostel mess, flatmates splitting groceries. Everyone logs what they paid for, and the app works out who owes whom and the fewest payments needed to even things out.
 
-**Version 1:** everything is stored on the phone, in a small database (from 1.2). No account, no internet, no server.
+Everything works on the phone with no account and no internet. Sign in (optional) to put a group online as a **live group** that friends join with a link, and to back up to Google Drive.
 
 The app has a bar at the bottom with three pages: **Home** (your groups), **Balances** (where you stand, with **People** and **Groups** tabs) and **Profile** (you).
 
@@ -22,7 +22,7 @@ A group is a set of people who share costs, such as "Goa trip" or "Room 204 mess
 | Add someone new | Type a name and tap **+** (or press Enter). This always makes a new person. Typing someone already in the group says so. A group needs at least 2 people. |
 | Same person everywhere | People are saved by a unique id, not by their name. A friend you add from another group is the same person in both, so the app knows they're one person. |
 | Rename people | **⋮ → Rename** on a name in the group form. **The new name shows everywhere**: in every group, every expense, the People page and reports (the rename popup says so when they're in other groups; live groups keep the names their members gave themselves). People are told apart by id, so the same name in different groups is fine; only one group's own list can't have the same name twice. |
-| Remove people | Allowed only if the person isn't in any expense, payment or monthly repeat yet. Otherwise the app explains what to change first, so totals never break. |
+| Remove people | Allowed only if the person isn't in any expense or payment yet. Otherwise the app explains what to change first, so totals never break. |
 | Edit a group | Use the group's **⋮** menu (top right): **Edit group**, **Share group link** (live groups), **Share report**, **Manage access** (live groups, admins). In Edit group, change what you need and tap **Save** at the top right; the **trash icon** next to it moves the group to the Bin (a live group you are still in: leave it first). On a live group, the **QR** button beside "People" opens its invite (QR, code, link). |
 
 ### Home list
@@ -141,9 +141,15 @@ The maroon header carries on into the top of the page: **Total spent** (or "Spen
 - Follows the Expenses filter, with the same chips at the top.
 
 ### Live groups (online)
-- **⋮** at the top also has **Leave group**, and for admins **Delete for everyone** (or **Restore group** within 30 days). Leaving needs you settled (under ₹1), out of every monthly repeat, and not the only admin; otherwise it says why ("You owe ₹450 here. Settle up first."). Nobody else with an account? Delete the group instead.
+- **Put online:** signed in, **⋮ → Put online** (on the group's Home card or at the top of the group itself) puts it on the server; you become its creator and the others are guests. The app asks "Which one is you?" when it doesn't know. Live groups show a small cloud next to their name, stay the same on every phone signed in to your account, and keep working offline: changes upload by themselves a couple of seconds later, or when the app next opens. If someone changed the same thing later, or you're no longer allowed to, the app puts the group's version back and says so. Logging out takes live groups off the phone (they come back when you sign in; you're warned if changes haven't uploaded).
+- **Invite** (the person icon on a live group): a QR code, an 8-letter code and a link to copy or share; admins can reset it. Invite links tapped in WhatsApp or anywhere else open the app straight on Join (signed out, it asks you to sign in first and then carries on); the website's **Open in the app** button does the same. **No app yet?** The link's **Get it on Google Play** keeps the code through the install, and the app opens straight on Join the first time it starts (from 2.2.0; the welcome pages show on the next start).
+- **Join:** scan the QR (or type the code); you see the group's name and size, can say which guest you are ("Are you one of these?") so your past expenses become yours, and join, or ask to join when admins approve new members. Admins see who's asking (and who they say they are) and let them in or decline.
+- **Roles:** Members shows Creator, Admin and Guest tags (Guest: no account, just added for the sums); tap someone with an account to open their page. Admins can make or dismiss admins and link a guest to a member (their expenses and payments move over).
+- **Group settings** (admins): approval for new members; who can add and edit expenses, add guests, change the name and type; the invite link on or off. Where only admins may add expenses, the list stays readable and says so.
+- **Activity** (the bell next to the ⋮): every change in the group, newest first, grouped by day with the time on this phone: who joined (with the link, or let in by an admin), who added, edited (and what changed), archived or deleted which expense, payments recorded or undone, renames, new admins and settings. The server writes each line as the change is saved, so nobody can fake or hide one.
+- **⋮** at the top also has **Leave group**, and for admins **Delete for everyone** (or **Restore group** within 30 days). Leaving needs you settled (under ₹1) and not the only admin; otherwise it says why ("You owe ₹450 here. Settle up first."). Nobody else with an account? Delete the group instead.
 - After leaving, being removed, or a delete for everyone, a line at the top says the copy is **read-only** and why.
-- **Members ⋮** (admins): **Remove from group**, for anyone settled who isn't the creator and is in no repeat. Their name stays on old expenses but can't be put on new ones.
+- **Members ⋮** (admins): **Remove from group**, for anyone settled who isn't the creator. Their name stays on old expenses but can't be put on new ones.
 - The **bell** opens Activity; a **gold dot** on it means someone else changed something since you last looked.
 - A small **cloud** in the header while changes wait to go up (tap to try now); the Home row's cloud turns into an upload cloud too.
 - Changes from other phones show **at once** while the app is open (the server pokes it); otherwise on opening the app or coming back to it.
@@ -165,7 +171,7 @@ Hostel and flat groups run for months, so they work a little differently from tr
 | Opens on this month | The Expenses list, the total at the top and Stats open on the current month (a **November 2026** chip). Tap × on the chip, or use the filter, for another month or all of them. |
 | Totals | **Members and Settle are always all-time:** what each person paid, their share, and the fewest payments to settle everything. |
 | Counts for | Each expense has a **Counts for** month, the month of its date unless you pick another: past months, or up to 12 months ahead. For a bill you forgot last month, set its date (the month follows), or keep today's date and pick the month, e.g. next month's gas bought early. |
-| No monthly repeats | Removed in the next version (2026-11-12): add rent, Wi-Fi or the cook each month like any expense. Expenses a repeat already added stay as they were, and old repeats are cleared by themselves. |
+| No monthly repeats | Removed in 2.1.0: add rent, Wi-Fi or the cook each month like any expense. Expenses a repeat already added stay as they were, and old repeats are cleared by themselves. |
 | No locked months | From 1.3 nothing is locked: old expenses can be fixed any time. Months closed in an older version simply open up. |
 
 ---
@@ -175,7 +181,7 @@ Hostel and flat groups run for months, so they work a little differently from tr
 | Feature | Details |
 |---|---|
 | Balances page | Two tabs under the title and search, **People** and **Groups** (tap or swipe); the search box and the count follow the open tab. Opens straight away (the stars join a moment later). A compact night-sky top (violet into wine, softly twinkling stars; no plain header bar) that stays put while the list scrolls: the title, the count and the People / Groups tabs, a small handle under them, then the search box. **Pull the top down (or tap the handle) to open a drawer** with **your people in orbit**; push it back up or tap again to close it. It is closed every time you come in. In the drawer: you in the middle with a gold "You" tag, everyone else on two slow tilted rings, the ones with money open nearest. Each face's ring shows their balance: **green gets back, red owes, grey settled**, explained by three chips with counts. Nearer faces are bigger and brighter. **Swipe across it to spin it** (a finger stops it, a flick keeps it turning and it slows down by itself); **tap a face**: it lifts, glows in its colour and shows the name, then that person opens (holding a finger on it shows the same and pauses the orbit). Below, everyone from all your groups, once, you first. Each card matches the orbit: the same coloured ring round their face, your gold "You" tag, their groups as small chips in the group type's colour (two, then "+N"), the amount in large type with GETS BACK / OWES under it (or "settled"), and an arrow. **Search** by name. |
-| Guest tag | Everyone without an account shows **Guest** (for now that's everyone, as live groups aren't here yet). You show **Account** once you sign in. |
+| Guest tag | Anyone with an account in one of your live groups shows a green tick; everyone else shows **Guest**. You aren't in the list: you're the centre of the circle above it. |
 | Groups tab | One line per group (locked ones left out) with "+₹X" or "−₹Y" (or Settled); tap a line to open the group. **Search** by group name. |
 | Who you are in a group | Each line on the Groups tab shows "You: Krish · change" for groups only on your phone (it only sets whose side the numbers are shown from). Where the app can't tell, it asks "Who are you here?" and you pick the member once. In a **live group** you are your account: it shows "You: Krish" with nothing to change. The same choice is used for "me" in Paste from chat. |
 | A person's page | Their balance in each group (tap to open the group), totals for "Gets back" and "Owes", their **UPI ids** (people with an account in one of your live groups, from their account; kept on the phone for offline; tap to copy; yours on your own page), **Rename** (changes the name in every group; for someone with an account it's **Save name**, kept on this phone only, with their own **~name** shown under yours), and **This is me** to link yourself (only while the app doesn't know who you are: signed out with no name linked yet). Someone who's in no group can be removed. |
@@ -190,7 +196,7 @@ Hostel and flat groups run for months, so they work a little differently from tr
 | Sign in | For guests, one slim row: **Sign in / Create account**, with a line on what an account keeps. |
 | Your name | Saved on this phone only. It tells the app which member is you in each group, and lets you add yourself to new groups in one tap. Renaming yourself renames your person everywhere. |
 | Your balance | **Across all your groups:** "You get back ₹X" and "You owe ₹Y" in large type (or "You're all settled"). |
-| UPI ids | Up to 3 (name@bank, e.g. krish@okaxis), each with an optional label like GPay, with **Copy** and **Remove** (with undo). They show in Settle and in the reports you send. The **?** by the heading says what they're for; trying to add a 4th says only 3 fit. |
+| UPI ids | Up to 3 (name@bank, e.g. krish@okaxis), each with an optional label like GPay. **+ Add** sits to the right of the heading and opens a popup (UPI id, label, Save). Each id has **Copy** and a **⋮** with **Edit** (the same popup, filled in; tapping the row does it too) and **Remove**, which asks first ("Remove krish@okaxis? People won't see it in Settle or in new reports."). With none saved, the card says how they help and opens Add. They show in Settle and in the reports you send. The **?** by the heading says what they're for; trying to add a 4th says only 3 fit. |
 | Account (optional) | Signed out: **Continue with Google** (one tap, in the Play Store app), or **Sign in** / **Create account** (creating one emails a **6-digit code** from Vilarci; type it in and you're signed in, with "Send a new code" after a minute; signing in before confirming sends a fresh code) with email and password; **Forgot password?** sends a link to set a new one. Signed in, your name and UPI ids are kept with the account (a new phone gets them back). Signed in, **Log out** and **Delete account** are in Settings → Account. **Log out** keeps groups that aren't live on the phone; **Delete account** first checks you could leave every live group and lists what's in the way ("Goa: you owe ₹450 here. Settle up first."); then it leaves them all and removes the account, name and UPI ids from the server. Without an account the app works exactly as before. |
 | Settings | A Settings row at the bottom (also the gear on Home). |
 
@@ -205,7 +211,7 @@ Tap the **share icon** at the top of a group, or **Send to the group** on the Se
 | **PDF report** | Group name, dates, totals, who pays whom, balances, spending by category, every expense and payments made. Opens on any phone. Written in the app's language. |
 | **Message (WhatsApp, SMS)** | The same summary as a text message with WhatsApp bold. Written in the app's language. |
 | UPI line | When someone owes you and you've saved a UPI id, both reports add **💳 Pay Krish by UPI: krish@okaxis**. |
-| **Group file for the app** | A `.vilarci.json` file friends with the app can import. (Once live groups arrive, those are shared by invite link instead; Import stays.) |
+| **Group file for the app** | A `.vilarci.json` file friends with the app can import, as their own copy. To share one group that everyone edits, put it online and send the invite link instead. |
 
 ---
 
@@ -231,7 +237,8 @@ The app version is shown at the bottom of Settings.
 
 ## 9. Undo and safety
 
-- **Undo bar:** after deleting or archiving an expense, moving a group to the bin, archiving a group, removing or marking a payment, or stopping a repeat, a bar at the bottom offers **Undo** for 6 seconds.
+- **Old versions are told to update:** when a newer version is out, Play's own update dialog shows now and then (at most every 3 days; it downloads while you use the app). If your version becomes too old to keep working, a sheet says so once a day with the date: "From 20 Nov 2026, this version (2.8.0) is out of date and stops working. Update to 3.5.0 or newer." From that day the app shows **Time to update** instead, on a moving night sky (twinkling stars, two soft glows drifting, the odd shooting star, the logo's ring slowly breathing; still with Reduce motion): "Since 20 Nov 2026, this version is out of date. Go to the Play Store and update to keep using Vilarci E-Split.", your version → the one needed, **Open Play Store**, and a line that your groups are safe. The day follows our server's clock, not the phone's. From 2.2.0.
+- **Undo bar:** after deleting or archiving an expense, moving a group to the bin, archiving a group, or removing or marking a payment, a bar at the bottom offers **Undo** for 6 seconds.
 - **Error screen instead of a crash:** if something goes wrong, the app shows "Something went wrong" with **Try again**, **Export my data** (straight from storage, so your data can always be saved), and **Send error details**.
 - Money is kept in **whole paise**, so every total, split and balance is exact.
 
@@ -239,10 +246,11 @@ The app version is shown at the bottom of Settings.
 
 ## 10. Data and privacy
 
-- **Stored on the device only**, in a database on the phone (from 1.2). No account, no server, no tracking.
+- **Stored on the phone**, in a database on the device. No tracking.
 - **Quick saving:** only what you changed is saved, so a group with hundreds of expenses saves as fast as a new one.
-- Data only leaves the phone when **you** share a report or export a backup.
-- Your profile, UPI ids, the People directory, pins, archive, group locks, the Bin, open counts and app settings stay on this phone and are never put in backups or shared files. (UPI ids only leave the phone inside a report you choose to send.)
+- Groups on this device only leave the phone when **you** share a report, export a backup or back up to your Google Drive.
+- **Live groups** are also kept on Vilarci's server (in Mumbai), where only that group's members can read them. Your account keeps your name, email and UPI ids; members of your live groups see your name, UPI ids and confirmed email.
+- Your People directory, pins, archive, group locks, the Bin, open counts and app settings stay on this phone and are never put in shared files. Saved names go into your own backups (Export, Google Drive) but never to a group.
 - **Automatic upgrades:** data from older versions of the app is upgraded the next time it opens. Updating to 1.2 moves everything into the new database by itself: groups, people, pins, the Bin, unsaved drafts and settings all come along, and nothing is lost.
 
 ---
@@ -269,18 +277,17 @@ The app version is shown at the bottom of Settings.
 |---|---|
 | **1.0.0** (Play Store, October 2026) | Groups, expenses with dates, notes, several payers and 4 ways to split; settle up with the fewest payments; Stats; PDF and WhatsApp reports; group files; Export / Import; Many at once; sums in the amount box; drafts; swiping between tabs and filters. |
 | **1.1.0** | Bottom bar with **People** and **Profile**; add people from other groups and rename them everywhere; pin and archive groups and expenses; the **Bin**; search; undo bar; error screen; hostel months and monthly repeats; **dark mode**; **Hindi, Bengali and Tamil**; small WhatsApp-style ⋮ menus. |
-| **1.2.0** (built, not released yet) | Your data moves to a faster database on the phone, by itself and with nothing lost. Old backups and group files still import into the right group. |
-| **1.4.0** (in progress) | Optional **accounts** (email and password): name and UPI ids kept with the account, log out, delete account. Continue with Google and Google Drive backup come next. |
-| **1.3.0** (in progress) | Hostel groups open on this month with **all-time** Members and Settle; a **filter** for month and category (Stats follows it); **Counts for** month on each expense; no more locked months; **group lock** with fingerprint or screen lock; **UPI ids** in Profile, Settle and reports; **‹ ›** to step months on the group page; a one-page, redesigned **Add expense** with **Paste from chat** and **Convert** (no more tabs). |
-
+| **1.2.0** (in 2.0.0) | Your data moves to a faster database on the phone, by itself and with nothing lost. Old backups and group files still import into the right group. |
+| **1.3.0** (in 2.0.0) | Hostel groups open on this month with **all-time** Members and Settle; a **filter** for month and category (Stats follows it); **Counts for** month on each expense; no more locked months; **group lock** with fingerprint or screen lock; **UPI ids** in Profile, Settle and reports; **‹ ›** to step months on the group page; a one-page, redesigned **Add expense** with **Paste from chat** and **Convert** (no more tabs). |
+| **1.4.0** (in 2.0.0) | Optional **accounts** (email and password): name and UPI ids kept with the account, log out, delete account. |
 | **2.0.0** (Play Store, November 2026) | **Live groups** (everyone sees the same expenses on their own phone), invite by link or QR, admins and roles, Activity, **Pay by UPI**, sign in with Google or email, Google Drive backup, add people from contacts, the Balances tab. |
-| **2.1.0** (built, November 2026) | WhatsApp-style names (`~Name` until you save one) and a member's verified email; New group **On this device / Online** with drafts; **No internet / Slow internet** bar and groups that go online by themselves when you're back; "You" in your groups, an invite button, a total you can fold away, Move to bin in the group menu. Fixes: the keyboard covering inputs, linked guests counted twice, Guest shown on everyone in Balances, removing people. Monthly repeats removed. More Chromebooks and tablets. |
+| **2.2.0** (in progress) | A friend who installs from your invite link lands on Join with the code filled in. **Update reminders:** Play's own update dialog when a newer version is out, and for very old versions a daily warning with the day they stop working, then a "Time to update" page with Open Play Store. |
+| **2.1.0** (Play Store, November 2026) | WhatsApp-style names (`~Name` until you save one) and a member's verified email; New group **On this device / Online** with drafts; **No internet / Slow internet** bar and groups that go online by themselves when you're back; "You" in your groups, an invite button, a total you can fold away, Move to bin in the group menu. Fixes: the keyboard covering inputs, linked guests counted twice, Guest shown on everyone in Balances, removing people. Monthly repeats removed. More Chromebooks and tablets. |
+
 ---
 
 ## 14. Coming next
 
-- **Continue with Google** for accounts.
-- **Google Drive backup:** to your own Drive, like WhatsApp. Export and Import stay too.
-- **Live groups** (being built, in test builds): signed in, **⋮ → Put online** (on the group's Home card or at the top of the group itself) puts it on the server; you become its creator and the others are guests. The app asks "Which one is you?" when it doesn't know. Live groups show a small cloud next to their name, stay the same on every phone signed in to your account, and keep working offline: changes upload by themselves a couple of seconds later, or when the app next opens. If someone changed the same thing later, or you're no longer allowed to, the app puts the group's version back and says so. Logging out takes live groups off the phone (they come back when you sign in; you're warned if changes haven't uploaded). **Invite** (the person icon on a live group): a QR code, an 8-letter code and a link to copy or share; admins can reset it. **Join**: scan the QR (or type the code); you see the group's name and size, can say which guest you are ("Are you one of these?") so your past expenses become yours, and join, or ask to join when admins approve new members. Admins see who's asking (and who they say they are) and let them in or decline. **Members** shows Creator, Admin and Guest tags (Guest: no account, just added for the sums); tap someone with an account to open their page; admins can make or dismiss admins and link a guest to a member (their expenses and payments move over). **Group settings** (admins): approval for new members; who can add and edit expenses, add guests, change the name and type; the invite link on or off. Where only admins may add expenses, the list stays readable and says so. **Activity** (the bell next to the ⋮ on a live group): every change in the group, newest first, grouped by day with the time on this phone: who joined (with the link, or let in by an admin), who added, edited (and what changed), archived or deleted which expense, payments recorded or undone, renames, new admins and settings. The server writes each line as the change is saved, so nobody can fake or hide one. **Invite links** tapped in WhatsApp or anywhere else open the app straight on Join (from the next store build; signed out, it asks you to sign in first and then carries on); the website's **Open in the app** button does the same. Leaving, removing, deleting, the unread dot, live updates and Pay are described under the group screen (§3, Live groups) and Settle.
+- **Notifications:** new expenses, payments and join requests in your live groups.
 - **Quick updates:** small fixes reach your phone without waiting for a Play Store update.
-- Later: notifications, WhatsApp OTP login, receipt photos, a "Rate the app" prompt, foreign currencies, itemised bills.
+- Later: WhatsApp OTP login, receipt photos, a "Rate the app" prompt, foreign currencies, itemised bills.

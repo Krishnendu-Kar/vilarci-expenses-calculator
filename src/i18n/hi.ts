@@ -573,7 +573,13 @@ export const hi: Dict = {
   'upi.duplicate': 'यह UPI आईडी पहले से सेव है।',
   'upi.copy': '{id} कॉपी करें',
   'upi.copied': '{id} कॉपी हो गया',
-  'upi.remove': '{id} हटाएँ',
+  'upi.addShort': 'जोड़ें',
+  'upi.editTitle': 'UPI आईडी बदलें',
+  'upi.edit': 'बदलें',
+  'upi.removeItem': 'हटाएँ',
+  'upi.removeTitle': '{id} हटाएँ?',
+  'upi.removeBody': 'लोग इसे हिसाब में और नई रिपोर्ट में नहीं देखेंगे।',
+  'upi.empty': 'अभी कोई UPI आईडी नहीं। एक जोड़ें ताकि लोगों को पता हो कि आपको कहाँ पैसे भेजें।',
   'upi.removed': '{id} हटा दिया',
   'account.title': 'अकाउंट',
   'account.signIn': 'साइन इन करें',
@@ -749,6 +755,17 @@ export const hi: Dict = {
   'bin.deleteNow': 'अभी हटाएँ',
   'bin.deleteTitle': '"{name}" हमेशा के लिए हटाएँ?',
   'bin.deleteBody': 'यह और इसके सारे खर्च इस फ़ोन से हट जाएँगे। इसे वापस नहीं लाया जा सकता।',
+
+  // ---- outdated versions ----
+  'update.warnTitle': 'कृपया ऐप अपडेट करें',
+  'update.warnBody': '{date} से यह वर्ज़न ({version}) पुराना हो जाएगा और काम करना बंद कर देगा। Vilarci E-Split इस्तेमाल करते रहने के लिए {min} या नया वर्ज़न लें।',
+  'update.neededTitle': 'अपडेट करने का समय',
+  'update.neededBody': '{date} से यह वर्ज़न पुराना हो गया है। Vilarci E-Split इस्तेमाल करते रहने के लिए Play Store पर जाकर अपडेट करें।',
+  'update.safe': 'आपके ग्रुप इस फ़ोन पर सुरक्षित हैं और अपडेट के बाद भी रहेंगे।',
+  'update.yours': 'यह फ़ोन',
+  'update.required': 'ज़रूरी',
+  'update.store': 'Play Store खोलें',
+  'update.later': 'बाद में',
 
   // ---- error page ----
   'error.title': 'कुछ गड़बड़ हो गई',
