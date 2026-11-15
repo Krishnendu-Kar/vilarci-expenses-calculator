@@ -1,5 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, AppState, FlatList, Image, Platform, Pressable, RefreshControl, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  AppState,
+  FlatList,
+  Image,
+  Platform,
+  Pressable,
+  RefreshControl,
+  Text,
+  TextInput,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,6 +31,7 @@ import { useUndo } from '../context/UndoContext';
 import { useMenu, type MenuAnchor, type MenuItem } from '../context/MenuContext';
 import { useLock } from '../context/LockContext';
 import { useSync } from '../context/SyncContext';
+import { useNews } from '../context/NewsContext';
 import { getLastBackup, loadSetting } from '../lib/storage';
 import { autoBackupIfDue } from '../lib/autoBackup';
 import { installInviteCode } from '../lib/installReferrer';
@@ -83,6 +96,9 @@ export function GroupsScreen({ navigation }: TabProps<'Home'>) {
   const { isOpen, openAll } = useLock();
   const { showUndo } = useUndo();
   const { syncNow } = useSync();
+  const news = useNews();
+  // Logo, name and three round buttons need about 366 dp: narrower phones get one ⋮.
+  const compactTop = useWindowDimensions().width < 370;
   const online = usePutOnline();
   const { openMenu } = useMenu();
   const styles = useStyles();
@@ -344,10 +360,54 @@ export function GroupsScreen({ navigation }: TabProps<'Home'>) {
     >
       <View style={styles.heroTop}>
         <Image source={LOGO} style={styles.logo} accessibilityIgnoresInvertColors />
-        <Text style={styles.wordmark}>Vilarci E-Split</Text>
+        <Text style={styles.wordmark} numberOfLines={1}>
+          Vilarci E-Split
+        </Text>
         <View style={styles.flex} />
-        <GlassButton icon="camera-outline" label={t('scan.title')} onPress={openScan} />
-        <GlassButton icon="settings-outline" label={t('settings.title')} onPress={() => navigation.navigate('Settings')} />
+        {/* News from Vilarci (not group activity), Scan and Settings. On a narrow
+            phone they fold into one ⋮, so the name never wraps. A gold dot when
+            there's news you haven't seen. */}
+        {compactTop ? (
+          <View>
+            <MoreButton
+              size={19}
+              color="#FFFFFF"
+              hitSlop={6}
+              style={styles.glassBtn}
+              onOpen={(anchor) =>
+                openMenu(
+                  anchor,
+                  [
+                    {
+                      key: 'news',
+                      icon: 'notifications-outline',
+                      title: news.unseen ? t('news.unseen', { count: news.unseen }) : t('news.title'),
+                    },
+                    { key: 'scan', icon: 'camera-outline', title: t('scan.title') },
+                    { key: 'settings', icon: 'settings-outline', title: t('settings.title') },
+                  ],
+                  (key) => {
+                    if (key === 'news') navigation.navigate('News');
+                    else if (key === 'scan') openScan();
+                    else if (key === 'settings') navigation.navigate('Settings');
+                  },
+                )
+              }
+            />
+            {news.unseen > 0 ? <View style={styles.glassDot} pointerEvents="none" /> : null}
+          </View>
+        ) : (
+          <>
+            <GlassButton
+              icon="notifications-outline"
+              label={news.unseen ? t('news.unseen', { count: news.unseen }) : t('news.title')}
+              onPress={() => navigation.navigate('News')}
+              dot={news.unseen > 0}
+            />
+            <GlassButton icon="camera-outline" label={t('scan.title')} onPress={openScan} />
+            <GlassButton icon="settings-outline" label={t('settings.title')} onPress={() => navigation.navigate('Settings')} />
+          </>
+        )}
       </View>
       <Pressable
         onPress={() => navigation.navigate('Search')}
@@ -401,7 +461,7 @@ export function GroupsScreen({ navigation }: TabProps<'Home'>) {
   );
 }
 
-function GlassButton({ icon, label, onPress }: { icon: IconName; label: string; onPress: () => void }) {
+function GlassButton({ icon, label, onPress, dot }: { icon: IconName; label: string; onPress: () => void; dot?: boolean }) {
   const styles = useStyles();
   return (
     <Pressable
@@ -412,6 +472,7 @@ function GlassButton({ icon, label, onPress }: { icon: IconName; label: string; 
       style={({ pressed }) => [styles.glassBtn, pressed && styles.glassPressed]}
     >
       <Ionicons name={icon} size={19} color="#FFFFFF" />
+      {dot ? <View style={styles.glassDot} /> : null}
     </Pressable>
   );
 }
@@ -591,7 +652,18 @@ const useStyles = makeStyles((c) => ({
   hero: { paddingHorizontal: spacing(4), paddingBottom: spacing(4) },
   heroTop: { flexDirection: 'row', alignItems: 'center', gap: spacing(2), height: TOP_ROW },
   logo: { width: 28, height: 28, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)' },
-  wordmark: { color: '#FFFFFF', fontFamily: DISPLAY_FONT, fontSize: font.lg + 1, fontWeight: '700', letterSpacing: 0.3 },
+  wordmark: { flexShrink: 1, color: '#FFFFFF', fontFamily: DISPLAY_FONT, fontSize: font.lg + 1, fontWeight: '700', letterSpacing: 0.3 },
+  glassDot: {
+    position: 'absolute',
+    top: 7,
+    right: 8,
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: '#FFD978',
+    borderWidth: 1.5,
+    borderColor: '#43090C',
+  },
   glassBtn: {
     width: 38,
     height: 38,

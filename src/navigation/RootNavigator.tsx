@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { DarkTheme, DefaultTheme, NavigationContainer, type LinkingOptions, type Theme } from '@react-navigation/native';
 import { Platform } from 'react-native';
 import { INVITE_HOST, joinPathCode } from '../lib/invite';
+import { navigationRef } from './navigationRef';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,6 +30,8 @@ import { ActivityScreen } from '../screens/ActivityScreen';
 import { LockedGroupsScreen } from '../screens/LockedGroupsScreen';
 import { WelcomeScreen } from '../screens/WelcomeScreen';
 import { BackupScreen } from '../screens/BackupScreen';
+import { NotificationsScreen } from '../screens/NotificationsScreen';
+import { NewsScreen } from '../screens/NewsScreen';
 import { useTheme } from '../theme/ThemeContext';
 import { useI18n } from '../i18n/I18nContext';
 import type { IconName } from '../data/categories';
@@ -120,7 +123,7 @@ export function RootNavigator() {
   }, [colors, dark]);
 
   return (
-    <NavigationContainer theme={navTheme} linking={Platform.OS === 'web' ? undefined : linking}>
+    <NavigationContainer ref={navigationRef} theme={navTheme} linking={Platform.OS === 'web' ? undefined : linking}>
       <Stack.Navigator screenOptions={{ ...header, contentStyle: { backgroundColor: colors.background } }}>
         <Stack.Screen name="Main" component={MainTabs} options={{ headerShown: false, title: t('tabs.home') }} />
         <Stack.Screen
@@ -157,6 +160,8 @@ export function RootNavigator() {
         <Stack.Screen name="Activity" component={ActivityScreen} options={{ title: t('activity.title') }} />
         <Stack.Screen name="LockedGroups" component={LockedGroupsScreen} options={{ title: t('lock.lockedTitle') }} />
         <Stack.Screen name="Backup" component={BackupScreen} options={{ title: t('backup.title') }} />
+        <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ title: t('push.title') }} />
+        <Stack.Screen name="News" component={NewsScreen} options={{ title: t('news.title') }} />
         <Stack.Screen name="Welcome" component={WelcomeScreen} options={{ headerShown: false, animation: 'fade' }} />
       </Stack.Navigator>
     </NavigationContainer>

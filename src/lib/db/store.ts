@@ -88,6 +88,17 @@ const SETTING = {
   appRelease: 'app_release',
   /** When the outdated warning and Play's update dialog were last shown ({ warnDay, playAt }). */
   updateAsked: 'update_asked',
+  /** Push notifications: what this phone last registered (JSON { token, user, key, at }). */
+  pushReg: 'push_reg',
+  /** When we asked for the notification permission (asked once, then only from Settings). */
+  pushAsked: 'push_asked',
+  /** Logged out while the phone's push token couldn't be deleted (offline): delete it when back online. */
+  pushDropToken: 'push_drop_token',
+  /** Your notification switches and muted groups, kept for offline (JSON, see api/push). */
+  pushPrefs: 'push_prefs',
+  /** News from Vilarci: the last list fetched (JSON, for offline) and the newest id you've seen. */
+  newsCache: 'news_cache',
+  newsSeen: 'news_seen',
   /** Google Drive backup: the last one ({ at, size }) and auto backup every 0 / 1 / 7 days. */
   driveLast: 'drive_last',
   driveAuto: 'drive_auto',
@@ -137,6 +148,12 @@ export type SettingKey =
   | 'installChecked'
   | 'appRelease'
   | 'updateAsked'
+  | 'pushReg'
+  | 'pushAsked'
+  | 'pushDropToken'
+  | 'pushPrefs'
+  | 'newsCache'
+  | 'newsSeen'
   | 'driveLast'
   | 'driveAuto'
   | 'onlineQueue'

@@ -181,3 +181,10 @@ PLAY_CONSOLE.md
 
 # How to mark app versions outdated (app_release table) (local only)
 app_release.md
+
+# Push notifications: design, setup, running it (local only)
+notification.md
+
+# Firebase app config (push notifications). Not a secret (it ships inside the app),
+# but the repo is public: kept local. app.config.js uses it when present.
+google-services.json

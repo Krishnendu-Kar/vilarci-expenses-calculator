@@ -59,6 +59,13 @@ export function SettingsScreen({ navigation }: ScreenProps<'Settings'>) {
         <SectionLabel>{t('settings.app')}</SectionLabel>
         <View style={styles.group}>
           <SettingsRow
+            icon="notifications-outline"
+            title={t('push.title')}
+            subtitle={t('push.settingsSub')}
+            onPress={() => navigation.navigate('Notifications')}
+          />
+          <View style={styles.divider} />
+          <SettingsRow
             icon="contrast-outline"
             title={t('appearance.title')}
             value={themeName}

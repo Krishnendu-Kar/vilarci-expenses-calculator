@@ -41,6 +41,10 @@ export type RootStackParamList = {
   Welcome: undefined;
   /** Settings → Google Drive backup. */
   Backup: undefined;
+  /** Settings → Notifications: on or off, which kinds, muted groups. */
+  Notifications: undefined;
+  /** The bell on Home: important notices, updates and news from Vilarci (not group activity). */
+  News: undefined;
   /** A live group's Activity: every change, who made it and when. */
   Activity: { groupId: string };
   /** A live group's settings (admins). */

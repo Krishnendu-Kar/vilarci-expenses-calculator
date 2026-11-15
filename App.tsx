@@ -13,6 +13,8 @@ import { MenuProvider } from './src/context/MenuContext';
 import { LockProvider } from './src/context/LockContext';
 import { AuthProvider } from './src/context/AuthContext';
 import { SyncProvider } from './src/context/SyncContext';
+import { PushProvider } from './src/context/PushContext';
+import { NewsProvider } from './src/context/NewsContext';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { NetBannerLayout } from './src/components/NetBanner';
 
@@ -32,14 +34,18 @@ export default function App() {
                       <AuthProvider>
                         <UndoProvider>
                           <SyncProvider>
-                            <MenuProvider>
-                              {/* The header bar is dark in both themes. */}
-                              <StatusBar style="light" />
-                              {/* "No internet" / "Slow internet" at the very bottom, under the tab bar. */}
-                              <NetBannerLayout>
-                                <RootNavigator />
-                              </NetBannerLayout>
-                            </MenuProvider>
+                            <NewsProvider>
+                              <PushProvider>
+                                <MenuProvider>
+                                  {/* The header bar is dark in both themes. */}
+                                  <StatusBar style="light" />
+                                  {/* "No internet" / "Slow internet" at the very bottom, under the tab bar. */}
+                                  <NetBannerLayout>
+                                    <RootNavigator />
+                                  </NetBannerLayout>
+                                </MenuProvider>
+                              </PushProvider>
+                            </NewsProvider>
                           </SyncProvider>
                         </UndoProvider>
                       </AuthProvider>

@@ -62,6 +62,14 @@
       ],
       "expo-sqlite",
       [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#9A0003",
+          "defaultChannel": "activity"
+        }
+      ],
+      [
         "expo-local-authentication",
         {
           "faceIDPermission": "Vilarci E-Split uses Face ID to open groups you have locked."

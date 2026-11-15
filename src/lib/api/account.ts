@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { forgetThisPhone } from '../push';
 import { EMAIL_CONFIRMED_URL, PASSWORD_RESET_URL } from './config';
 import { sanitizeUpiIds } from '../upi';
 import type { UpiId } from '../../types';
@@ -49,6 +50,8 @@ export async function sendPasswordReset(email: string) {
 }
 
 export async function signOut() {
+  // While still signed in: this phone stops getting this account's notifications.
+  await forgetThisPhone().catch(() => {});
   const { error } = await supabase.auth.signOut({ scope: 'local' });
   if (error) throw error;
 }
@@ -68,6 +71,7 @@ export async function saveAccountProfile(p: AccountProfile) {
 
 /** Deletes the account on the server (supabase/functions/delete-account), then signs out here. */
 export async function deleteAccount() {
+  await forgetThisPhone().catch(() => {});
   const { error } = await supabase.functions.invoke('delete-account', { method: 'POST' });
   if (error) throw error;
   await supabase.auth.signOut({ scope: 'local' }).catch(() => {});

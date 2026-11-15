@@ -61,6 +61,17 @@ A group is a set of people who share costs, such as "Goa trip" or "Room 204 mess
 
 ---
 
+### Updates from Vilarci (the bell on Home)
+
+| Feature | Details |
+|---|---|
+| The bell | Top of Home, next to the camera. A gold dot when there's something you haven't seen. On a narrow phone (under 370 dp) the bell, camera and settings fold into one **⋮** (the dot moves onto it). |
+| What's in it | Only messages from us: **Important** (red), **New version** (gold) and **Update**, newest first, with the date, the text and sometimes a **Read more** / **Get the update** link. Never group activity: that's inside each group (its own bell). |
+| Who sees it | Everyone, signed in or not. Works offline with the last list; pull down to refresh. In your language. |
+| Pushes | Some news also comes as a notification (Settings → Notifications → Updates from Vilarci); tapping it opens this page. |
+
+---
+
 ## 2. Expenses
 
 | Feature | Details |
@@ -147,6 +158,8 @@ The maroon header carries on into the top of the page: **Total spent** (or "Spen
 - **Roles:** Members shows Creator, Admin and Guest tags (Guest: no account, just added for the sums); tap someone with an account to open their page. Admins can make or dismiss admins and link a guest to a member (their expenses and payments move over).
 - **Group settings** (admins): approval for new members; who can add and edit expenses, add guests, change the name and type; the invite link on or off. Where only admins may add expenses, the list stays readable and says so.
 - **Activity** (the bell next to the ⋮): every change in the group, newest first, grouped by day with the time on this phone: who joined (with the link, or let in by an admin), who added, edited (and what changed), archived or deleted which expense, payments recorded or undone, renames, new admins and settings. The server writes each line as the change is saved, so nobody can fake or hide one.
+- **Notifications** (from 2.2.0): arrive even if the phone was off, offline or restarting (they wait up to 4 weeks), at high priority. Only people still in the group get them, never the one who made the change, and someone who joined later gets nothing from before. A payment tells only the two people in it. Many changes at once (a big offline sync) become one "Rahul made 12 changes". A group **locked** on your phone says only "New activity in a locked group"; on a locked screen the text stays hidden. **⋮ → Mute notifications** turns one group off. Tapping one opens the group (a join request opens its requests). **Logging out** stops that account's notifications on the phone at once, even if it was offline (they're refused on the way and never shown); signing in with another account moves the phone to it.
+- **Remind** (Settle, a small bell on rows where someone pays you): sends them a notification with what they owe here. Once a day per person, only when you're owed.
 - **⋮** at the top also has **Leave group**, and for admins **Delete for everyone** (or **Restore group** within 30 days). Leaving needs you settled (under ₹1) and not the only admin; otherwise it says why ("You owe ₹450 here. Settle up first."). Nobody else with an account? Delete the group instead.
 - After leaving, being removed, or a delete for everyone, a line at the top says the copy is **read-only** and why.
 - **Members ⋮** (admins): **Remove from group**, for anyone settled who isn't the creator. Their name stays on old expenses but can't be put on new ones.
@@ -221,6 +234,7 @@ Open with the gear on Home, or from Profile. A menu; each option opens its own p
 
 | Option | What it does |
 |---|---|
+| **Notifications** | Push notifications from your live groups (from 2.2.0, Play Store app, signed in): someone adds, edits or deletes an expense (with **your share**), pays you or records a payment for you, **reminds** you what you owe, joins, leaves, makes you an admin, renames or deletes the group; join requests for admins and the answer for the one asking; **updates from Vilarci**. Each kind on or off, and every live group on or off (muted); the switches follow your account on all your phones. A top card says where things stand and opens the phone's settings when they're off there. **Sound and vibration** per kind in the phone's settings (channels: Group activity, Join requests, News). In your language. Asked once, when you first have a live group. |
 | **Google Drive backup** | Your groups in a hidden folder of your Google Drive that only this app can read (the newest two kept). **Back up now**, **Automatic backup** (off / daily / weekly, run when the app opens and one is due), and **Restore**: pick a backup, then the usual Import preview. Counts as a backup for Home's reminder. Needs the Play Store app (not Expo Go). |
 | **Export data** | Saves all groups into one file (`vilarci-e-split-backup-2026-10-27.json`) through the share menu. Shows the last export date, red if it's over 2 weeks old. A home banner reminds you after 2 weeks. |
 | **Import data** | Pick a backup or a group file. A preview shows each group as **New** or **Updates your copy** before anything changes. Broken files are explained, never half-loaded. Files made by older versions still work and update the right group. |
@@ -239,7 +253,7 @@ The app version is shown at the bottom of Settings.
 
 - **Old versions are told to update:** when a newer version is out, Play's own update dialog shows now and then (at most every 3 days; it downloads while you use the app). If your version becomes too old to keep working, a sheet says so once a day with the date: "From 20 Nov 2026, this version (2.8.0) is out of date and stops working. Update to 3.5.0 or newer." From that day the app shows **Time to update** instead, on a moving night sky (twinkling stars, two soft glows drifting, the odd shooting star, the logo's ring slowly breathing; still with Reduce motion): "Since 20 Nov 2026, this version is out of date. Go to the Play Store and update to keep using Vilarci E-Split.", your version → the one needed, **Open Play Store**, and a line that your groups are safe. The day follows our server's clock, not the phone's. From 2.2.0.
 - **Undo bar:** after deleting or archiving an expense, moving a group to the bin, archiving a group, or removing or marking a payment, a bar at the bottom offers **Undo** for 6 seconds.
-- **Error screen instead of a crash:** if something goes wrong, the app shows "Something went wrong" with **Try again**, **Export my data** (straight from storage, so your data can always be saved), and **Send error details**.
+- **No error page, ever:** if something breaks, the Play Store app quietly starts its screens again from Home with your data read fresh from the phone; if it keeps breaking, the whole app restarts by itself. Nothing is lost: your groups stay on the phone. (Development builds show what went wrong.)
 - Money is kept in **whole paise**, so every total, split and balance is exact.
 
 ---
@@ -281,13 +295,12 @@ The app version is shown at the bottom of Settings.
 | **1.3.0** (in 2.0.0) | Hostel groups open on this month with **all-time** Members and Settle; a **filter** for month and category (Stats follows it); **Counts for** month on each expense; no more locked months; **group lock** with fingerprint or screen lock; **UPI ids** in Profile, Settle and reports; **‹ ›** to step months on the group page; a one-page, redesigned **Add expense** with **Paste from chat** and **Convert** (no more tabs). |
 | **1.4.0** (in 2.0.0) | Optional **accounts** (email and password): name and UPI ids kept with the account, log out, delete account. |
 | **2.0.0** (Play Store, November 2026) | **Live groups** (everyone sees the same expenses on their own phone), invite by link or QR, admins and roles, Activity, **Pay by UPI**, sign in with Google or email, Google Drive backup, add people from contacts, the Balances tab. |
-| **2.2.0** (in progress) | A friend who installs from your invite link lands on Join with the code filled in. **Update reminders:** Play's own update dialog when a newer version is out, and for very old versions a daily warning with the day they stop working, then a "Time to update" page with Open Play Store. |
+| **2.2.0** (in progress) | A friend who installs from your invite link lands on Join with the code filled in. **Push notifications** (expenses with your share, payments, reminders with a Remind button in Settle, members, join requests, news; per-kind switches, mute per group, locked groups stay private, nothing after logging out). No error page: the app recovers by itself. **Update reminders:** Play's own update dialog when a newer version is out, and for very old versions a daily warning with the day they stop working, then a "Time to update" page with Open Play Store. |
 | **2.1.0** (Play Store, November 2026) | WhatsApp-style names (`~Name` until you save one) and a member's verified email; New group **On this device / Online** with drafts; **No internet / Slow internet** bar and groups that go online by themselves when you're back; "You" in your groups, an invite button, a total you can fold away, Move to bin in the group menu. Fixes: the keyboard covering inputs, linked guests counted twice, Guest shown on everyone in Balances, removing people. Monthly repeats removed. More Chromebooks and tablets. |
 
 ---
 
 ## 14. Coming next
 
-- **Notifications:** new expenses, payments and join requests in your live groups.
 - **Quick updates:** small fixes reach your phone without waiting for a Play Store update.
 - Later: WhatsApp OTP login, receipt photos, a "Rate the app" prompt, foreign currencies, itemised bills.

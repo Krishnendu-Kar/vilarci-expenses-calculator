@@ -33,6 +33,7 @@
     "expo-in-app-updates": "^0.13.0",
     "expo-linear-gradient": "~58.0.3",
     "expo-local-authentication": "~58.0.2",
+    "expo-notifications": "~58.1.9",
     "expo-print": "~58.0.8",
     "expo-sharing": "~58.0.22",
     "expo-splash-screen": "~58.0.13",

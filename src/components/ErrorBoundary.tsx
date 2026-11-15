@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { reloadAppAsync } from 'expo';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,12 +12,18 @@ import { shareMessage } from '../lib/files';
 import { notify } from '../lib/confirm';
 import appConfig from '../../app.json';
 
-// When something breaks while drawing a screen (or a crash would otherwise
-// close the app), this shows a calm page instead: try again, and a way to
-// save your data and send the details to us.
+// When something breaks while drawing a screen, or a crash would otherwise
+// close the app. The Play Store app never shows an error page (user,
+// 2026-11-15): it quietly starts the screens again from Home, with the data
+// read fresh from the phone. Crashing again and again (4 times in 30 s)
+// restarts the whole app instead. The groups are on the phone the whole
+// time, so nothing is lost. Development builds show the error page, to see
+// what broke.
 
 interface State {
   error: Error | null;
+  /** Bumped to start the screens again from scratch. */
+  round: number;
 }
 
 type ErrorHandler = (error: unknown, isFatal?: boolean) => void;
@@ -24,23 +31,30 @@ type ErrorHandler = (error: unknown, isFatal?: boolean) => void;
 const errorUtils = (globalThis as { ErrorUtils?: { getGlobalHandler(): ErrorHandler; setGlobalHandler(h: ErrorHandler): void } })
   .ErrorUtils;
 
-export class ErrorBoundary extends React.Component<{ children: React.ReactNode }, State> {
-  state: State = { error: null };
-  private previousHandler?: ErrorHandler;
+const QUIET = !__DEV__;
+const WINDOW_MS = 30_000;
+const MAX_ROUNDS = 3;
 
-  static getDerivedStateFromError(error: Error): State {
+export class ErrorBoundary extends React.Component<{ children: React.ReactNode }, State> {
+  state: State = { error: null, round: 0 };
+  private previousHandler?: ErrorHandler;
+  private crashes: number[] = [];
+
+  static getDerivedStateFromError(error: Error): Partial<State> {
     return { error };
   }
 
   componentDidMount() {
     // Errors outside rendering (a button handler, a timer) would close the
-    // app in a release build. Show this page instead. Development keeps
+    // app in a release build: recover the same quiet way. Development keeps
     // React Native's red error screen.
     if (!errorUtils || __DEV__) return;
     this.previousHandler = errorUtils.getGlobalHandler();
     errorUtils.setGlobalHandler((error, isFatal) => {
-      if (isFatal) this.setState({ error: error instanceof Error ? error : new Error(String(error)) });
-      else this.previousHandler?.(error, isFatal);
+      if (isFatal) {
+        console.warn('Fatal error', error);
+        this.recover();
+      } else this.previousHandler?.(error, isFatal);
     });
   }
 
@@ -50,12 +64,38 @@ export class ErrorBoundary extends React.Component<{ children: React.ReactNode }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     console.warn('Screen crashed', error, info.componentStack);
+    if (QUIET) this.recover();
+  }
+
+  /** Start again from Home; if that keeps failing, restart the app. */
+  private recover() {
+    const now = Date.now();
+    this.crashes = [...this.crashes.filter((t) => now - t < WINDOW_MS), now];
+    if (this.crashes.length > MAX_ROUNDS) {
+      this.crashes = [];
+      reloadAppAsync('Recovering from repeated crashes').catch(() => this.restartScreens());
+      return;
+    }
+    this.restartScreens();
+  }
+
+  private restartScreens() {
+    this.setState((s) => ({ error: null, round: s.round + 1 }));
   }
 
   render() {
-    if (this.state.error) return <ErrorScreen error={this.state.error} onRetry={() => this.setState({ error: null })} />;
-    return this.props.children;
+    if (this.state.error) {
+      // Only ever seen in development; the Play Store app is already starting again.
+      return QUIET ? <Blank /> : <ErrorScreen error={this.state.error} onRetry={() => this.restartScreens()} />;
+    }
+    return <React.Fragment key={this.state.round}>{this.props.children}</React.Fragment>;
   }
+}
+
+/** The app's background for the moment it takes to start again. */
+function Blank() {
+  const { colors } = useTheme();
+  return <View style={{ flex: 1, backgroundColor: colors.background }} />;
 }
 
 function ErrorScreen({ error, onRetry }: { error: Error; onRetry: () => void }) {

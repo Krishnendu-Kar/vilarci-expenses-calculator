@@ -8,6 +8,8 @@ import { ActionSheet } from '../../components/ActionSheet';
 import { SectionLabel } from '../../components/SectionLabel';
 import { useGroups } from '../../context/GroupsContext';
 import { useUndo } from '../../context/UndoContext';
+import { useAuth } from '../../context/AuthContext';
+import { remind } from '../../lib/api/push';
 import type { Transfer } from '../../lib/split';
 import { money } from '../../lib/money';
 import { shortDate } from '../../lib/format';
@@ -45,6 +47,25 @@ export function SettleTab({ group, transfers, names, meId, onShare }: Props) {
   const i18n = useI18n();
   const name = (id: string) => (id === meId ? i18n.t('common.youName', { name: names[id] }) : names[id]);
   const short = (id: string) => (id === meId ? i18n.t('common.you') : names[id]);
+  const { user } = useAuth();
+  // Live groups: remind someone who owes you (a notification to them; once a day each).
+  const [reminding, setReminding] = useState<string | null>(null);
+  const canRemind = (from: string) =>
+    !!user && group.online?.status === 'active' && group.members.some((m) => m.id === from && m.account);
+  const sendReminder = async (tr: Transfer) => {
+    setReminding(tr.from);
+    try {
+      const r = await remind(group.id, tr.from);
+      const who = names[tr.from];
+      if (r.status === 'sent') showNote(i18n.t('settle.reminded', { name: who }));
+      else if (r.status === 'too_soon') showNote(i18n.t('settle.remindedToday', { name: who }));
+      else showNote(i18n.t('settle.remindNothing'));
+    } catch {
+      notify(i18n.t('push.saveFailed'), i18n.t('push.saveFailedBody'));
+    } finally {
+      setReminding(null);
+    }
+  };
 
   const copy = async (vpa: string) => {
     try {
@@ -172,6 +193,18 @@ export function SettleTab({ group, transfers, names, meId, onShare }: Props) {
                     <View style={styles.right}>
                       <Text style={[styles.amount, iPay && styles.neg, iGet && styles.pos]}>{money(tr.amount)}</Text>
                       <View style={styles.actions}>
+                        {iGet && canRemind(tr.from) ? (
+                          <Pressable
+                            onPress={() => void sendReminder(tr)}
+                            disabled={reminding === tr.from}
+                            accessibilityRole="button"
+                            accessibilityLabel={i18n.t('settle.remindLabel', { name: names[tr.from] })}
+                            style={({ pressed }) => [styles.remindBtn, (pressed || reminding === tr.from) && t.pressed]}
+                          >
+                            <Ionicons name="notifications-outline" size={13} color={colors.tint} />
+                            <Text style={styles.remindText}>{i18n.t('settle.remind')}</Text>
+                          </Pressable>
+                        ) : null}
                         {canPay ? (
                           <Pressable
                             onPress={() => startPay(tr, ids)}
@@ -339,6 +372,17 @@ const useStyles = makeStyles((c) => ({
     paddingVertical: 3,
   },
   paidText: { fontSize: font.xs + 1, fontWeight: '700', color: c.success },
+  remindBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    borderWidth: 1,
+    borderColor: c.border,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing(2.5),
+    paddingVertical: 3,
+  },
+  remindText: { fontSize: font.xs + 1, fontWeight: '700', color: c.tint },
   payBtn: {
     backgroundColor: c.primary,
     borderRadius: radii.pill,

@@ -38,6 +38,7 @@ import { usePutOnline } from './group/usePutOnline';
 import { useUnreadActivity } from './group/activitySeen';
 import { useIsFocused } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
+import { usePush } from '../context/PushContext';
 import { useSync } from '../context/SyncContext';
 import type { ScreenProps } from '../navigation/types';
 
@@ -50,7 +51,7 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetail'>) {
   const group = useGroup(route.params.groupId);
   const { recordVisit, prefs, unarchiveGroup, profile, meMap, upiIds, names: shown, moveToBin, restoreFromBin } = useGroups();
-  const { showUndo } = useUndo();
+  const { showUndo, showNote } = useUndo();
   const styles = useStyles();
   const { colors } = useTheme();
   const { t } = useI18n();
@@ -89,6 +90,8 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
   }, [putOnlineAs, group, navigation, online.go]);
   const exit = useGroupExit(group);
   const { user } = useAuth();
+  const push = usePush();
+  const muted = !!group && push.isMuted(group.id);
   const focused = useIsFocused();
   const unread = useUnreadActivity(group, user?.id ?? null, focused);
   const { state: syncState, waiting, syncNow, queued } = useSync();
@@ -128,6 +131,14 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
         ? [{ key: 'link', icon: 'link-outline' as const, title: t('detail.shareLink') }]
         : []),
       { key: 'report', icon: 'share-social-outline', title: t('detail.shareReport') },
+      // A live group you're in: its notifications on or off, for all your phones.
+      ...(group.online?.status === 'active' && user
+        ? [
+            muted
+              ? { key: 'unmute', icon: 'notifications-outline' as const, title: t('push.unmute') }
+              : { key: 'mute', icon: 'notifications-off-outline' as const, title: t('push.mute') },
+          ]
+        : []),
       // A local group: put it online to invite people (needs signing in).
       ...(!group.online ? [{ key: 'online', icon: 'cloud-upload-outline' as const, title: t('online.menu') }] : []),
       ...(group.online && can('change_settings', group)
@@ -158,6 +169,13 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
       else if (key === 'delete') exit.deleteForEveryone();
       else if (key === 'restore') exit.restore();
       else if (key === 'online') online.start(group);
+      else if (key === 'mute' || key === 'unmute') {
+        const mute = key === 'mute';
+        push
+          .setMuted(group.id, mute)
+          .then(() => showNote(t(mute ? 'push.mutedNote' : 'push.unmutedNote', { name: group.name })))
+          .catch(() => notify(t('push.saveFailed'), t('push.saveFailedBody')));
+      }
       else if (key === 'bin') {
         const removed = moveToBin(group.id);
         navigation.popToTop();
@@ -217,6 +235,10 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
     moveToBin,
     restoreFromBin,
     showUndo,
+    showNote,
+    user,
+    muted,
+    push,
   ]);
 
   // The page shows first (header, name, tabs) and works out the numbers
