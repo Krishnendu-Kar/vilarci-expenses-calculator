@@ -24,6 +24,7 @@ import { draftHasContent, parseGroupDraft, type GroupDraft, type GroupWhere } fr
 import { can } from '../lib/permissions';
 import { newId } from '../lib/id';
 import { membersFromContacts } from '../lib/contacts';
+import { prefetchContactNames } from '../lib/deviceContacts';
 import { ContactPicker } from './groupForm/ContactPicker';
 import { GROUP_KINDS } from '../data/categories';
 import { makeStyles, useTheme } from '../theme/ThemeContext';
@@ -40,6 +41,10 @@ const PREVIEW = 5;
 export function GroupFormScreen({ navigation, route }: ScreenProps<'GroupForm'>) {
   const groupId = route.params?.groupId;
   const existing = useGroup(groupId ?? '');
+  // Edit group is the name, type and settings; its people are edited on their
+  // own (Members → add person icon). A new group has both.
+  const peopleOnly = !!existing && !!route.params?.people;
+  const showPeople = !existing || peopleOnly;
   const { groups, people, profile, meMap, createGroup, updateGroup, moveToBin, restoreFromBin, linkProfile, setProfileName, names } =
     useGroups();
   const { showUndo } = useUndo();
@@ -168,7 +173,18 @@ export function GroupFormScreen({ navigation, route }: ScreenProps<'GroupForm'>)
   const openPeople = () => {
     setOpenedWith(new Set(members.map((m) => m.id)));
     setPeopleOpen(true);
+    // Contacts take a moment to read: start now, so "From contacts" is ready.
+    prefetchContactNames();
   };
+  // From Members' add person icon: straight into the Add popup.
+  const openedOnce = useRef(false);
+  useEffect(() => {
+    if (!peopleOnly || openedOnce.current) return;
+    openedOnce.current = true;
+    openPeople();
+    // once, on opening
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [peopleOnly]);
   // In that popup: picking several from the phone's contacts.
   const [fromContacts, setFromContacts] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
@@ -391,19 +407,21 @@ export function GroupFormScreen({ navigation, route }: ScreenProps<'GroupForm'>)
           >
             <Text style={styles.headerSaveText}>{t('groupForm.saveShort')}</Text>
           </Pressable>
-          <Pressable
-            onPress={() => removeRef.current()}
-            hitSlop={10}
-            accessibilityRole="button"
-            accessibilityLabel={t('groupForm.delete')}
-            style={({ pressed }) => [styles.headerBin, pressed && styles.pressed]}
-          >
-            <Ionicons name="trash-outline" size={20} color={colors.white} />
-          </Pressable>
+          {peopleOnly ? null : (
+            <Pressable
+              onPress={() => removeRef.current()}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel={t('groupForm.delete')}
+              style={({ pressed }) => [styles.headerBin, pressed && styles.pressed]}
+            >
+              <Ionicons name="trash-outline" size={20} color={colors.white} />
+            </Pressable>
+          )}
         </View>
       ),
     });
-  }, [navigation, existing, styles, colors, t]);
+  }, [navigation, existing, peopleOnly, styles, colors, t]);
 
   const typedMember = members.find((m) => m.name.toLowerCase() === draft.trim().toLowerCase());
   // People from your other groups, filtered by what's typed.
@@ -438,21 +456,25 @@ export function GroupFormScreen({ navigation, route }: ScreenProps<'GroupForm'>)
             </Pressable>
           </View>
         ) : null}
-        <Input
-          label={t('groupForm.name')}
-          placeholder={t('groupForm.namePlaceholder')}
-          value={name}
-          onChangeText={setName}
-          maxLength={40}
-        />
+        {peopleOnly ? null : (
+          <>
+            <Input
+              label={t('groupForm.name')}
+              placeholder={t('groupForm.namePlaceholder')}
+              value={name}
+              onChangeText={setName}
+              maxLength={40}
+            />
 
-        <SectionLabel>{t('groupForm.type')}</SectionLabel>
-        <View style={styles.chips}>
-          {GROUP_KINDS.map((k) => (
-            <Chip key={k.key} label={k.label} icon={k.icon} selected={kind === k.key} onPress={() => setKind(k.key)} />
-          ))}
-        </View>
-        {kind === 'hostel' ? <Text style={styles.kindHint}>{t('groupForm.hostelHint')}</Text> : null}
+            <SectionLabel>{t('groupForm.type')}</SectionLabel>
+            <View style={styles.chips}>
+              {GROUP_KINDS.map((k) => (
+                <Chip key={k.key} label={k.label} icon={k.icon} selected={kind === k.key} onPress={() => setKind(k.key)} />
+              ))}
+            </View>
+            {kind === 'hostel' ? <Text style={styles.kindHint}>{t('groupForm.hostelHint')}</Text> : null}
+          </>
+        )}
 
         {existing ? null : (
           <>
@@ -471,46 +493,50 @@ export function GroupFormScreen({ navigation, route }: ScreenProps<'GroupForm'>)
           </>
         )}
 
-        <View style={styles.peopleHead}>
-          <View style={styles.flex}>
-            <SectionLabel>{t('groupForm.people', { count: listed.length })}</SectionLabel>
-          </View>
-          {/* A live group: its QR and invite link, to bring more people in. */}
-          {canInvite && existing ? (
-            <Pressable
-              onPress={() => navigation.navigate('Invite', { groupId: existing.id })}
-              hitSlop={10}
-              accessibilityRole="button"
-              accessibilityLabel={t('invite.title')}
-              style={({ pressed }) => [styles.qrBtn, pressed && styles.pressed]}
-            >
-              <Ionicons name="qr-code-outline" size={18} color={colors.tint} />
-            </Pressable>
-          ) : null}
-        </View>
-        <View style={styles.memberList}>
-          {(showAllMembers ? listed : listed.slice(0, PREVIEW)).map((m) => {
-            const items = memberMenu(m);
-            return (
-              <View key={m.id} style={styles.memberRow}>
-                <Avatar name={names.of(m) || '?'} size={32} />
-                <Text style={styles.memberName} numberOfLines={1}>
-                  {shownName(m)}
-                </Text>
-                {items.length ? (
-                  <MoreButton size={20} hitSlop={10} onOpen={(anchor) => openMenu(anchor, items, (key) => pickMemberMenu(m, key))} />
-                ) : null}
+        {showPeople ? (
+          <>
+            <View style={styles.peopleHead}>
+              <View style={styles.flex}>
+                <SectionLabel>{t('groupForm.people', { count: listed.length })}</SectionLabel>
               </View>
-            );
-          })}
-          {!showAllMembers && listed.length > PREVIEW ? (
-            <Pressable onPress={() => setShowAllMembers(true)} hitSlop={8} accessibilityRole="button">
-              <Text style={[styles.more, styles.link]}>{t('groupForm.showAllMembers', { count: listed.length })}</Text>
-            </Pressable>
-          ) : null}
-          {listed.length === 0 ? <Text style={styles.hint}>{t('groupForm.emptyHint')}</Text> : null}
-        </View>
-        <PrimaryButton label={t('groupForm.addPeople')} variant="outline" onPress={openPeople} style={styles.manageBtn} />
+              {/* A live group: its QR and invite link, to bring more people in. */}
+              {canInvite && existing ? (
+                <Pressable
+                  onPress={() => navigation.navigate('Invite', { groupId: existing.id })}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('invite.title')}
+                  style={({ pressed }) => [styles.qrBtn, pressed && styles.pressed]}
+                >
+                  <Ionicons name="qr-code-outline" size={18} color={colors.tint} />
+                </Pressable>
+              ) : null}
+            </View>
+            <View style={styles.memberList}>
+              {(showAllMembers ? listed : listed.slice(0, PREVIEW)).map((m) => {
+                const items = memberMenu(m);
+                return (
+                  <View key={m.id} style={styles.memberRow}>
+                    <Avatar name={names.of(m) || '?'} size={32} />
+                    <Text style={styles.memberName} numberOfLines={1}>
+                      {shownName(m)}
+                    </Text>
+                    {items.length ? (
+                      <MoreButton size={20} hitSlop={10} onOpen={(anchor) => openMenu(anchor, items, (key) => pickMemberMenu(m, key))} />
+                    ) : null}
+                  </View>
+                );
+              })}
+              {!showAllMembers && listed.length > PREVIEW ? (
+                <Pressable onPress={() => setShowAllMembers(true)} hitSlop={8} accessibilityRole="button">
+                  <Text style={[styles.more, styles.link]}>{t('groupForm.showAllMembers', { count: listed.length })}</Text>
+                </Pressable>
+              ) : null}
+              {listed.length === 0 ? <Text style={styles.hint}>{t('groupForm.emptyHint')}</Text> : null}
+            </View>
+            <PrimaryButton label={t('groupForm.addPeople')} variant="outline" onPress={openPeople} style={styles.manageBtn} />
+          </>
+        ) : null}
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 

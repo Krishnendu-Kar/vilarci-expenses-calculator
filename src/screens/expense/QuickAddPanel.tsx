@@ -87,6 +87,11 @@ export function QuickAddPanel({ group, initial, converted, onConvert, onClear, o
   const [openRow, setOpenRow] = useState<string | null>(null);
   const [openName, setOpenName] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  // Optional, so folded to one line; open by itself when a draft has text or it was converted.
+  const [open, setOpen] = useState(() => !!initial?.text?.trim() || !!converted);
+  useEffect(() => {
+    if (converted) setOpen(true);
+  }, [converted]);
   // Convert was tapped on this text but found nothing to add.
   const [tried, setTried] = useState(false);
 
@@ -220,15 +225,50 @@ export function QuickAddPanel({ group, initial, converted, onConvert, onClear, o
 
   const bubbleText = dark ? '#E9F5EE' : '#0F1B0F';
 
+  if (!open) {
+    return (
+      <Pressable
+        onPress={() => setOpen(true)}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: false }}
+        style={({ pressed }) => [styles.folded, pressed && styles.pressed]}
+      >
+        <View style={styles.foldedIcon}>
+          <Ionicons name="chatbubbles-outline" size={16} color={colors.tint} />
+        </View>
+        <Text style={styles.foldedTitle} numberOfLines={1}>
+          {t('chat.title')}
+        </Text>
+        <Text style={styles.optional}>{t('chat.optional')}</Text>
+        <View style={styles.flex} />
+        <Ionicons name="chevron-down" size={18} color={colors.textSecondary} />
+      </Pressable>
+    );
+  }
+
   return (
     <View>
       <FormSection
         icon="chatbubbles-outline"
         title={t('chat.title')}
         right={
-          <Pressable onPress={() => setShowHelp((v) => !v)} hitSlop={10} accessibilityLabel={t('quick.howTo')}>
-            <Ionicons name={showHelp ? 'close-circle-outline' : 'help-circle-outline'} size={22} color={colors.tint} />
-          </Pressable>
+          <View style={styles.headRight}>
+            <Pressable onPress={() => setShowHelp((v) => !v)} hitSlop={10} accessibilityLabel={t('quick.howTo')}>
+              <Ionicons name={showHelp ? 'close-circle-outline' : 'help-circle-outline'} size={22} color={colors.tint} />
+            </Pressable>
+            {/* Fold it away again (not once converted: the preview below needs it). */}
+            {!converted ? (
+              <Pressable
+                onPress={() => setOpen(false)}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: true }}
+                accessibilityLabel={t('chat.fold')}
+              >
+                <Ionicons name="chevron-up" size={20} color={colors.textSecondary} />
+              </Pressable>
+            ) : null}
+          </View>
         }
       >
         <Text style={styles.sub}>{t('chat.sub')}</Text>
@@ -492,6 +532,38 @@ function GhostButton({ icon, label, onPress }: { icon: IconName; label: string; 
 }
 
 const useStyles = makeStyles((c) => ({
+  folded: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing(2.5),
+    backgroundColor: c.surface,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: c.border,
+    paddingHorizontal: spacing(3),
+    paddingVertical: spacing(2.5),
+    marginBottom: spacing(2.5),
+  },
+  foldedIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: c.surfaceAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  foldedTitle: { fontSize: font.md, fontWeight: '700', color: c.textPrimary, flexShrink: 1 },
+  optional: {
+    fontSize: font.xs,
+    fontWeight: '700',
+    color: c.textSecondary,
+    backgroundColor: c.surfaceAlt,
+    borderRadius: radii.pill,
+    paddingHorizontal: spacing(2),
+    paddingVertical: 2,
+    overflow: 'hidden',
+  },
+  headRight: { flexDirection: 'row', alignItems: 'center', gap: spacing(3) },
   flex: { flex: 1 },
   pressed: { opacity: 0.75 },
   sub: { fontSize: font.sm, color: c.textSecondary, lineHeight: 18, marginTop: -spacing(1.5), marginBottom: spacing(3) },

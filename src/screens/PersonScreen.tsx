@@ -1,6 +1,9 @@
 import React, { useEffect, useLayoutEffect, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
+import { useIsFocused } from '@react-navigation/native';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { Avatar } from '../components/Avatar';
 import { PrimaryButton } from '../components/PrimaryButton';
@@ -9,6 +12,8 @@ import { useGroups } from '../context/GroupsContext';
 import { useOpenGroups } from '../context/LockContext';
 import { useAuth } from '../context/AuthContext';
 import { useUndo } from '../context/UndoContext';
+import { useMenu } from '../context/MenuContext';
+import { MoreButton } from '../components/MoreButton';
 import * as Clipboard from 'expo-clipboard';
 import { useAccountUpi } from './group/useMemberUpi';
 import { memberEmail } from '../lib/api/groups';
@@ -36,6 +41,9 @@ export function PersonScreen({ navigation, route }: ScreenProps<'Person'>) {
   const { groups: openGroups } = useOpenGroups();
   const styles = useStyles();
   const { colors, dark } = useTheme();
+  const insets = useSafeAreaInsets();
+  // Only while on screen: a group opened from here has a dark header again.
+  const focused = useIsFocused();
   const { t } = useI18n();
   const person = people.find((p) => p.id === route.params.personId);
   // Someone with an account in one of your live groups: their id is their account id.
@@ -71,10 +79,35 @@ export function PersonScreen({ navigation, route }: ScreenProps<'Person'>) {
     navigation.setOptions({ title: shownName });
   }, [navigation, shownName]);
 
+  const { openMenu } = useMenu();
+  const startRename = () => {
+    if (!person) return;
+    setName(unsaved ? (own ?? person.name) : person.name);
+    setEditing(true);
+  };
+
+  // No top bar here (the name is on the page): the status bar icons follow the
+  // theme, and a round back button floats at the top left.
+  const top = (
+    <>
+      {focused ? <StatusBar style={dark ? 'light' : 'dark'} /> : null}
+      <Pressable
+        onPress={() => navigation.goBack()}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel={t('common.back')}
+        style={({ pressed }) => [styles.back, { top: insets.top + spacing(2) }, pressed && styles.backPressed]}
+      >
+        <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
+      </Pressable>
+    </>
+  );
+
   if (!person) {
     return (
       <ScreenContainer>
-        <Text style={styles.missing}>{t('person.missing')}</Text>
+        <Text style={[styles.missing, { marginTop: insets.top + spacing(16) }]}>{t('person.missing')}</Text>
+        {top}
       </ScreenContainer>
     );
   }
@@ -113,7 +146,10 @@ export function PersonScreen({ navigation, route }: ScreenProps<'Person'>) {
 
   return (
     <ScreenContainer>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing(14) }]}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.head}>
           <Avatar name={shownName} size={72} />
           {editing ? (
@@ -168,26 +204,6 @@ export function PersonScreen({ navigation, route }: ScreenProps<'Person'>) {
                   <Ionicons name="checkmark-circle" size={15} color={colors.success} accessibilityLabel={t('person.verified')} />
                 </View>
               ) : null}
-              {contact && unsaved ? <Text style={styles.hint}>{t('person.unsavedHint')}</Text> : null}
-              <View style={styles.nameActions}>
-                <Pressable
-                  onPress={() => {
-                    setName(unsaved ? (own ?? person.name) : person.name);
-                    setEditing(true);
-                  }}
-                  hitSlop={8}
-                  style={styles.renameBtn}
-                >
-                  <Ionicons name={unsaved ? 'person-add-outline' : 'create-outline'} size={16} color={colors.tint} />
-                  <Text style={styles.link}>{unsaved ? t('person.saveName') : t('person.rename')}</Text>
-                </Pressable>
-                {contact && !unsaved && own ? (
-                  <Pressable onPress={() => forgetName(person.id)} hitSlop={8} style={styles.renameBtn}>
-                    <Ionicons name="close-circle-outline" size={16} color={colors.textSecondary} />
-                    <Text style={styles.forget}>{t('person.forgetName')}</Text>
-                  </Pressable>
-                ) : null}
-              </View>
             </>
           )}
         </View>
@@ -238,7 +254,6 @@ export function PersonScreen({ navigation, route }: ScreenProps<'Person'>) {
 
         <SectionLabel>{t('person.groups', { count: nets.length })}</SectionLabel>
         {nets.length === 0 ? <Text style={styles.empty}>{t('person.noGroups')}</Text> : null}
-        <Text style={styles.empty}>{t('lock.notCounted')}</Text>
         {nets.map(({ group, net }) => (
           <Pressable
             key={group.id}
@@ -263,6 +278,12 @@ export function PersonScreen({ navigation, route }: ScreenProps<'Person'>) {
             )}
           </Pressable>
         ))}
+        {/* A quiet footnote under the list, the same for everyone: showing it only
+            when they're in a locked group would give the locked group away. */}
+        <View style={styles.lockedNote}>
+          <Ionicons name="lock-closed-outline" size={13} color={colors.textSecondary} />
+          <Text style={styles.lockedText}>{t('lock.notCounted')}</Text>
+        </View>
 
         {/* Only while the app doesn't know who you are yet (signed out, no
             person linked): once it does, nobody else's page offers it. */}
@@ -278,6 +299,32 @@ export function PersonScreen({ navigation, route }: ScreenProps<'Person'>) {
           <PrimaryButton label={t('person.delete', { name: shownName })} variant="danger" onPress={remove} style={styles.btnGap} />
         ) : null}
       </ScrollView>
+      {top}
+      {/* Top right: the name's actions (Rename / Save name, Remove saved name). */}
+      {!editing ? (
+        <View style={[styles.more, { top: insets.top + spacing(2) }]}>
+          <MoreButton
+            size={20}
+            hitSlop={8}
+            color={colors.textPrimary}
+            style={styles.moreBtn}
+            onOpen={(anchor) =>
+              openMenu(
+                anchor,
+                [
+                  unsaved
+                    ? { key: 'rename', icon: 'person-add-outline', title: t('person.saveName') }
+                    : { key: 'rename', icon: 'create-outline', title: t('person.rename') },
+                  ...(contact && !unsaved && own
+                    ? [{ key: 'forget', icon: 'close-circle-outline' as const, title: t('person.forgetName'), danger: true }]
+                    : []),
+                ],
+                (key) => (key === 'forget' ? forgetName(person.id) : startRename()),
+              )
+            }
+          />
+        </View>
+      ) : null}
     </ScreenContainer>
   );
 }
@@ -290,6 +337,30 @@ const useStyles = makeStyles((c) => ({
   upiLabel: { fontSize: font.sm - 1, color: c.textSecondary, marginTop: 1 },
   missing: { textAlign: 'center', marginTop: spacing(16), color: c.textSecondary },
   content: { padding: spacing(5), paddingBottom: spacing(12) },
+  back: {
+    position: 'absolute',
+    left: spacing(4),
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: c.surface,
+    borderWidth: 1,
+    borderColor: c.border,
+  },
+  backPressed: { opacity: 0.7 },
+  more: { position: 'absolute', right: spacing(4) },
+  moreBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: c.surface,
+    borderWidth: 1,
+    borderColor: c.border,
+  },
   flex: { flex: 1 },
   head: { alignItems: 'center', marginBottom: spacing(6) },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing(2), marginTop: spacing(3) },
@@ -308,10 +379,7 @@ const useStyles = makeStyles((c) => ({
   ownName: { fontSize: font.md, color: c.textSecondary, marginTop: spacing(1), textAlign: 'center' },
   emailRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing(1.5), marginTop: spacing(1) },
   email: { fontSize: font.sm + 1, color: c.textSecondary, flexShrink: 1 },
-  nameActions: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', columnGap: spacing(4) },
-  renameBtn: { flexDirection: 'row', alignItems: 'center', gap: spacing(1), marginTop: spacing(2), padding: spacing(1) },
   link: { color: c.tint, fontWeight: '700', fontSize: font.sm + 1 },
-  forget: { color: c.textSecondary, fontWeight: '600', fontSize: font.sm + 1 },
   editWrap: { alignSelf: 'stretch', marginTop: spacing(4) },
   nameInput: {
     backgroundColor: c.surface,
@@ -341,6 +409,8 @@ const useStyles = makeStyles((c) => ({
   totalValue: { fontSize: font.xl, fontWeight: '800', marginTop: spacing(1) },
   divider: { width: 1, backgroundColor: c.border },
   empty: { fontSize: font.sm + 1, color: c.textSecondary, marginBottom: spacing(4) },
+  lockedNote: { flexDirection: 'row', alignItems: 'center', gap: spacing(1.5), marginTop: spacing(1), marginLeft: spacing(1) },
+  lockedText: { fontSize: font.sm, color: c.textSecondary },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

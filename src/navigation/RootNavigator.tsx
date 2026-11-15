@@ -129,7 +129,13 @@ export function RootNavigator() {
         <Stack.Screen
           name="GroupForm"
           component={GroupFormScreen}
-          options={({ route }) => ({ title: route.params?.groupId ? t('groupForm.editTitle') : t('groupForm.newTitle') })}
+          options={({ route }) => ({
+            title: route.params?.groupId
+              ? route.params.people
+                ? t('groupForm.peopleTitle')
+                : t('groupForm.editTitle')
+              : t('groupForm.newTitle'),
+          })}
         />
         <Stack.Screen name="GroupDetail" component={GroupDetailScreen} options={{ title: '' }} />
         <Stack.Screen
@@ -137,7 +143,8 @@ export function RootNavigator() {
           component={ExpenseFormScreen}
           options={({ route }) => ({ title: route.params.expenseId ? t('expense.editTitle') : t('expense.addTitle') })}
         />
-        <Stack.Screen name="Person" component={PersonScreen} options={{ title: '' }} />
+        {/* No top bar: the page shows the name big; a round back button sits on the page. */}
+        <Stack.Screen name="Person" component={PersonScreen} options={{ title: '', headerShown: false }} />
         <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: t('settings.title') }} />
         <Stack.Screen name="Appearance" component={AppearanceScreen} options={{ title: t('appearance.title') }} />
         <Stack.Screen name="Language" component={LanguageScreen} options={{ title: t('language.title') }} />

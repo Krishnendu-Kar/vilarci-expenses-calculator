@@ -125,6 +125,19 @@ export function MembersTab({ group, balances, names, meId }: Props) {
             <Ionicons name="link-outline" size={20} color={colors.tint} />
           </Pressable>
         ) : null}
+        {/* Add, rename or remove people (Edit group no longer lists them). A
+            live group: only those allowed to add guests, while you're in it. */}
+        {(!live || (group.online?.status === 'active' && can('add_guests', group))) ? (
+          <Pressable
+            onPress={() => navigation.navigate('GroupForm', { groupId: group.id, people: true })}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={i18n.t('members.addPeople')}
+            style={({ pressed }) => [styles.inviteBtn, pressed && styles.pressed]}
+          >
+            <Ionicons name="person-add-outline" size={19} color={colors.tint} />
+          </Pressable>
+        ) : null}
       </View>
       <Text style={t.explain}>{i18n.t('members.explain')}</Text>
       {rows.length === 0 ? (

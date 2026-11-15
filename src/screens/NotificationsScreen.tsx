@@ -52,9 +52,10 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
   const setKind = (kind: PushKind, on: boolean) => void push.setKind(kind, on).catch(failed);
   const setGroup = (groupId: string, on: boolean) => void push.setMuted(groupId, !on).catch(failed);
 
-  // What the top says: where notifications stand on this phone.
-  let status: { icon: IconName; text: string; tone: 'ok' | 'warn' | 'info'; action?: { label: string; run: () => void } };
-  if (!push.supported) status = { icon: 'phone-portrait-outline', text: t('push.unsupported'), tone: 'info' };
+  // What the top says: where notifications stand on this phone. Nothing
+  // where they can't work at all (Expo Go, the web): no warning for that.
+  let status: { icon: IconName; text: string; tone: 'ok' | 'warn' | 'info'; action?: { label: string; run: () => void } } | null;
+  if (!push.supported) status = null;
   else if (!user)
     status = {
       icon: 'person-circle-outline',
@@ -73,18 +74,20 @@ export function NotificationsScreen({ navigation }: ScreenProps<'Notifications'>
     status = { icon: 'notifications-outline', text: t('push.off'), tone: 'warn', action: { label: t('push.turnOn'), run: () => void push.turnOn() } };
   else status = { icon: 'checkmark-circle', text: t('push.on'), tone: 'ok' };
 
-  const toneColor = status.tone === 'ok' ? colors.success : status.tone === 'warn' ? colors.danger : colors.tint;
+  const toneColor = status?.tone === 'ok' ? colors.success : status?.tone === 'warn' ? colors.danger : colors.tint;
 
   return (
     <ScreenContainer>
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.status}>
-          <View style={styles.statusRow}>
-            <Ionicons name={status.icon} size={22} color={toneColor} />
-            <Text style={styles.statusText}>{status.text}</Text>
+        {status ? (
+          <View style={styles.status}>
+            <View style={styles.statusRow}>
+              <Ionicons name={status.icon} size={22} color={toneColor} />
+              <Text style={styles.statusText}>{status.text}</Text>
+            </View>
+            {status.action ? <PrimaryButton label={status.action.label} onPress={status.action.run} style={styles.statusBtn} /> : null}
           </View>
-          {status.action ? <PrimaryButton label={status.action.label} onPress={status.action.run} style={styles.statusBtn} /> : null}
-        </View>
+        ) : null}
 
         <SectionLabel>{t('push.whatTitle')}</SectionLabel>
         <View style={[styles.group, !canChange && styles.dim]}>

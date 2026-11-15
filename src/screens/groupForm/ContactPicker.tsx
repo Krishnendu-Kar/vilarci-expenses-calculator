@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Avatar } from '../../components/Avatar';
 import { SearchBar } from '../../components/SearchBar';
 import { PrimaryButton } from '../../components/PrimaryButton';
-import { readContactNames, type ContactNames } from '../../lib/deviceContacts';
+import { cachedContactNames, readContactNames, type ContactNames } from '../../lib/deviceContacts';
 import { makeStyles, useTheme } from '../../theme/ThemeContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { font, radii, spacing } from '../../theme/tokens';
@@ -24,18 +24,21 @@ interface Props {
 
 /**
  * Group form → Add people → From contacts: the phone's contacts by name,
- * searchable, tick several. Reads names only, when opened; the ones added
- * become guests (or the person already in your People with that name).
+ * searchable, tick several. Names only, read when the Add people popup
+ * opened (or now) and kept for the session, so they're usually there at
+ * once; the ones added become guests (or the person already in your People
+ * with that name).
  */
 export function ContactPicker({ picked, onToggle, inGroup, known, onBack }: Props) {
   const styles = useStyles();
   const { colors } = useTheme();
   const { t } = useI18n();
-  const [result, setResult] = useState<ContactNames | null>(null);
+  // Names read earlier this session show straight away.
+  const [result, setResult] = useState<ContactNames | null>(cachedContactNames);
   const [query, setQuery] = useState('');
 
   const load = useCallback(() => {
-    setResult(null);
+    setResult((cur) => (cur?.status === 'ok' ? cur : null));
     void readContactNames().then(setResult);
   }, []);
   useEffect(load, [load]);

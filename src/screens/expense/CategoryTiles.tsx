@@ -1,17 +1,37 @@
-import React from 'react';
-import { Pressable, Text, View } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Pressable, ScrollView, Text, View, type ScrollViewInstance } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CATEGORIES } from '../../data/categories';
 import { makeStyles, useTheme } from '../../theme/ThemeContext';
 import { font, spacing } from '../../theme/tokens';
 import type { CategoryKey } from '../../types';
 
-/** The categories as round icon tiles, four to a row. */
+const TILE = 64;
+const GAP = spacing(2);
+
+/** The categories as round icon tiles in one row that scrolls sideways. */
 export function CategoryTiles({ value, onChange }: { value: CategoryKey; onChange: (k: CategoryKey) => void }) {
   const styles = useStyles();
   const { colors } = useTheme();
+  const scroller = useRef<ScrollViewInstance>(null);
+
+  // Editing an expense whose category is further along: bring it into view.
+  useEffect(() => {
+    const i = CATEGORIES.findIndex((c) => c.key === value);
+    if (i > 3) scroller.current?.scrollTo({ x: (i - 2) * (TILE + GAP), animated: false });
+    // only on opening
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
-    <View style={styles.grid} accessibilityRole="radiogroup">
+    <ScrollView
+      ref={scroller}
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentContainerStyle={styles.row}
+      style={styles.scroller}
+      accessibilityRole="radiogroup"
+    >
       {CATEGORIES.map((c) => {
         const on = value === c.key;
         return (
@@ -32,18 +52,20 @@ export function CategoryTiles({ value, onChange }: { value: CategoryKey; onChang
           </Pressable>
         );
       })}
-    </View>
+    </ScrollView>
   );
 }
 
 const useStyles = makeStyles((c) => ({
-  grid: { flexDirection: 'row', flexWrap: 'wrap', rowGap: spacing(3) },
-  tile: { width: '25%', alignItems: 'center', gap: spacing(1.5), paddingHorizontal: spacing(0.5) },
+  // Runs to the card's edges, so the row visibly continues past them.
+  scroller: { marginHorizontal: -spacing(3) },
+  row: { gap: GAP, paddingHorizontal: spacing(3), paddingVertical: 2 },
+  tile: { width: TILE, alignItems: 'center', gap: spacing(1) },
   pressed: { opacity: 0.7 },
   circle: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: c.surfaceAlt,

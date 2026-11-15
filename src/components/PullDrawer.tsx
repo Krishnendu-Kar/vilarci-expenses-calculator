@@ -110,9 +110,9 @@ export function PullDrawer({ head, children, showLabel, hideLabel, initiallyOpen
           accessibilityLabel={isOpen ? hideLabel : showLabel}
           style={styles.handle}
         >
-          <View style={styles.bar} />
+          {/* One marker: the arrow, which also shows which way it goes. */}
           <Animated.View style={chevron}>
-            <Ionicons name="chevron-down" size={14} color="rgba(255,255,255,0.7)" />
+            <Ionicons name="chevron-down" size={20} color="rgba(255,255,255,0.75)" />
           </Animated.View>
         </Pressable>
       </View>
@@ -126,6 +126,5 @@ const styles = StyleSheet.create({
   inner: { position: 'absolute', top: 0, left: 0, right: 0 },
   // Before it has measured itself (open from the start): in the flow, so the box fits it.
   innerFree: { position: 'relative' },
-  handle: { alignSelf: 'center', alignItems: 'center', paddingTop: spacing(3), gap: 2 },
-  bar: { width: 38, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.35)' },
+  handle: { alignSelf: 'center', alignItems: 'center', paddingTop: spacing(2), paddingHorizontal: spacing(4) },
 });

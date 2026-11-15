@@ -245,6 +245,11 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
 
   // ---- live numbers for the hints under each section ----
   const payerSum = sumTexts(payerTexts, toPaise);
+  // Several people paid: the total is what they paid together, nothing to
+  // type twice or make add up (user, 2026-11-15).
+  useEffect(() => {
+    if (multiPay) setAmountText(payerSum > 0 ? paiseToInput(payerSum) : '');
+  }, [multiPay, payerSum]);
   const customTexts = mode === 'equal' ? {} : values[mode];
   const exactSum = sumTexts(values.exact, toPaise);
   const shareWeights: [string, number][] = allIds.map((id) => [id, parseInt(values.shares[id] || '0', 10) || 0]);
@@ -389,6 +394,8 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
                   style={styles.amountInput}
                   value={amountText}
                   onChangeText={(v) => setAmountText(v.replace(/[^0-9.+\-*x×]/gi, ''))}
+                  // Several payers: the total is their sum (typed in Paid by).
+                  editable={!multiPay}
                   placeholder="0"
                   placeholderTextColor="rgba(255,255,255,0.35)"
                   selectionColor={GOLD}
@@ -402,16 +409,20 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
                 />
               </View>
               {/* The number keyboard has no "+", so sums get a button. */}
-              <Pressable
-                onPress={() => setAmountText((v) => (v && !/[+\-*x×]$/i.test(v) ? `${v}+` : v))}
-                style={({ pressed }) => [styles.plusBtn, pressed && styles.glassPressed]}
-                hitSlop={6}
-                accessibilityLabel={t('expense.addAnother')}
-              >
-                <Ionicons name="add" size={22} color={colors.white} />
-              </Pressable>
+              {multiPay ? null : (
+                <Pressable
+                  onPress={() => setAmountText((v) => (v && !/[+\-*x×]$/i.test(v) ? `${v}+` : v))}
+                  style={({ pressed }) => [styles.plusBtn, pressed && styles.glassPressed]}
+                  hitSlop={6}
+                  accessibilityLabel={t('expense.addAnother')}
+                >
+                  <Ionicons name="add" size={22} color={colors.white} />
+                </Pressable>
+              )}
             </View>
-            {isSum(amountText) ? (
+            {multiPay ? (
+              <Text style={styles.sumHint}>{t('expense.totalOfPayers')}</Text>
+            ) : isSum(amountText) ? (
               <Text style={styles.sumHint}>{amount ? t('expense.sumEquals', { amount: money(amount) }) : t('expense.sumBad')}</Text>
             ) : null}
             <View style={styles.titleField}>
@@ -525,7 +536,9 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
                         onChangeText={(v) => setPayerTexts((s) => ({ ...s, [m.id]: v }))}
                       />
                     ))}
-                    <Remaining assigned={payerSum} total={amount} format={money} />
+                    <Text style={[styles.remaining, payerSum > 0 ? styles.ok : styles.muted]}>
+                      {payerSum > 0 ? t('expense.payersTotal', { amount: money(payerSum) }) : t('expense.payersEmpty')}
+                    </Text>
                   </>
                 ) : (
                   <View style={styles.payers} accessibilityRole="radiogroup">
@@ -708,7 +721,7 @@ const useStyles = makeStyles((c) => ({
     backgroundColor: c.header,
     paddingHorizontal: spacing(5),
     paddingTop: spacing(3),
-    paddingBottom: spacing(6),
+    paddingBottom: spacing(4),
     borderBottomLeftRadius: radii.xl,
     borderBottomRightRadius: radii.xl,
   },
@@ -741,7 +754,7 @@ const useStyles = makeStyles((c) => ({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing(2.5),
-    marginTop: spacing(5),
+    marginTop: spacing(3),
     paddingLeft: spacing(1.5),
     paddingRight: spacing(4),
     borderRadius: radii.pill,
@@ -758,8 +771,8 @@ const useStyles = makeStyles((c) => ({
     backgroundColor: 'rgba(0,0,0,0.2)',
   },
   titleInput: { flex: 1, color: c.white, fontSize: font.md + 1, fontWeight: '600', paddingVertical: spacing(3), paddingHorizontal: 0 },
-  body: { paddingHorizontal: spacing(4), paddingTop: spacing(5) },
-  bodyTop: { paddingTop: spacing(4) },
+  body: { paddingHorizontal: spacing(3.5), paddingTop: spacing(3) },
+  bodyTop: { paddingTop: spacing(3) },
   banner: {
     flexDirection: 'row',
     alignItems: 'center',

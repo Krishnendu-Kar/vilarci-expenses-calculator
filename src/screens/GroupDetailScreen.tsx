@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { Fab } from '../components/Fab';
 import { DISPLAY_FONT } from '../components/LuxeCard';
@@ -123,9 +126,8 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
       return;
     }
     const items: MenuItem[] = [
-      ...(can('edit_info', group) || can('add_guests', group)
-        ? [{ key: 'edit', icon: 'create-outline' as const, title: t('groupForm.editTitle') }]
-        : []),
+      // Name, type and settings; people are added from Members (the add person icon).
+      ...(can('edit_info', group) ? [{ key: 'edit', icon: 'create-outline' as const, title: t('groupForm.editTitle') }] : []),
       // A live group: its link, QR and code (requests too, for admins).
       ...(group.online && can('share_invite', group)
         ? [{ key: 'link', icon: 'link-outline' as const, title: t('detail.shareLink') }]
@@ -300,7 +302,10 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
   const month = filter.month;
   const canBack = !!month && month > firstMonthOf(group);
   const canAhead = !!month && month < lastPickableMonth();
-  const stepMonth = (n: number) => month && setFilter({ ...filter, month: addMonths(month, n) });
+  // A plain function: this is after the early returns, where hooks can't go.
+  const stepMonth = (n: number) => {
+    if (month) setFilter({ ...filter, month: addMonths(month, n) });
+  };
 
   const tabLabels: { key: Tab; label: string }[] = [
     { key: 'expenses', label: t('detail.tabExpenses') },
@@ -346,26 +351,29 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
           {/* Pull up (or tap the handle) and the whole total folds away, leaving only the
               handle over the tabs; pull down to bring it back. Open each time the page opens. */}
           <PullDrawer initiallyOpen showLabel={t('detail.showTotal')} hideLabel={t('detail.hideTotal')}>
-            <View style={styles.totalBody}>
-              <View style={styles.labelRow}>
-                {month ? (
-                  <MonthStep icon="chevron-back" label={t('detail.prevMonth')} enabled={canBack} onPress={() => stepMonth(-1)} />
-                ) : null}
-                <Text style={styles.totalLabel} numberOfLines={1}>
-                  {totalLabel}
+            {/* Hostel / flat: swipe the month's total left for the next month, right for the one before. */}
+            <MonthSwipe enabled={!!month} canBack={canBack} canAhead={canAhead} onStep={stepMonth}>
+              <View style={styles.totalBody}>
+                <View style={styles.labelRow}>
+                  {month ? (
+                    <MonthStep icon="chevron-back" label={t('detail.prevMonth')} enabled={canBack} onPress={() => stepMonth(-1)} />
+                  ) : null}
+                  <Text style={styles.totalLabel} numberOfLines={1}>
+                    {totalLabel}
+                  </Text>
+                  {month ? (
+                    <MonthStep icon="chevron-forward" label={t('detail.nextMonth')} enabled={canAhead} onPress={() => stepMonth(1)} />
+                  ) : null}
+                </View>
+                {/* Same height before the numbers are in, so nothing jumps. */}
+                <Text style={[styles.totalValue, !ready && styles.waiting]} numberOfLines={1} adjustsFontSizeToFit>
+                  {money(total)}
                 </Text>
-                {month ? (
-                  <MonthStep icon="chevron-forward" label={t('detail.nextMonth')} enabled={canAhead} onPress={() => stepMonth(1)} />
-                ) : null}
+                <Text style={[styles.totalSub, !ready && styles.waiting]} numberOfLines={1}>
+                  {t('detail.perPerson', { amount: money(Math.round(total / headcount)) })} · {t('count.person', { count: headcount })}
+                </Text>
               </View>
-              {/* Same height before the numbers are in, so nothing jumps. */}
-              <Text style={[styles.totalValue, !ready && styles.waiting]} numberOfLines={1} adjustsFontSizeToFit>
-                {money(total)}
-              </Text>
-              <Text style={[styles.totalSub, !ready && styles.waiting]} numberOfLines={1}>
-                {t('detail.perPerson', { amount: money(Math.round(total / headcount)) })} · {t('count.person', { count: headcount })}
-              </Text>
-            </View>
+            </MonthSwipe>
           </PullDrawer>
         </View>
         <View style={styles.tabs} accessibilityRole="tablist">
@@ -444,6 +452,55 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
 }
 
 /** A small glass circle on the hero that moves the month by one. */
+/**
+ * A sideways swipe on the month's total steps the month (left: next, right:
+ * the one before), within the same limits as the ‹ › arrows. Only sideways:
+ * up and down stay with the fold-away drawer around it. The total follows the
+ * finger a little and springs back.
+ */
+function MonthSwipe({
+  enabled,
+  canBack,
+  canAhead,
+  onStep,
+  children,
+}: {
+  enabled: boolean;
+  canBack: boolean;
+  canAhead: boolean;
+  onStep: (n: number) => void;
+  children: React.ReactNode;
+}) {
+  const still = useReducedMotion();
+  const x = useSharedValue(0);
+  const pan = useMemo(
+    () =>
+      Gesture.Pan()
+        .enabled(enabled)
+        .activeOffsetX([-16, 16])
+        .failOffsetY([-10, 10])
+        .onUpdate((e) => {
+          'worklet';
+          // Stiffer where there's no month to go to.
+          const blocked = (e.translationX < 0 && !canAhead) || (e.translationX > 0 && !canBack);
+          if (!still) x.value = e.translationX * (blocked ? 0.12 : 0.35);
+        })
+        .onEnd((e) => {
+          'worklet';
+          if ((e.translationX < -50 || e.velocityX < -600) && canAhead) scheduleOnRN(onStep, 1);
+          else if ((e.translationX > 50 || e.velocityX > 600) && canBack) scheduleOnRN(onStep, -1);
+          x.value = withSpring(0, { damping: 18, stiffness: 220 });
+        }),
+    [enabled, canBack, canAhead, onStep, still, x],
+  );
+  const style = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }] }));
+  return (
+    <GestureDetector gesture={pan}>
+      <Animated.View style={style}>{children}</Animated.View>
+    </GestureDetector>
+  );
+}
+
 function MonthStep({
   icon,
   label,

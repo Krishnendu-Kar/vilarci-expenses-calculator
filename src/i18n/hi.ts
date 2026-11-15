@@ -4,6 +4,7 @@ import type { Dict } from './en';
 export const hi: Dict = {
   // ---- common ----
   'common.cancel': 'रद्द करें',
+  'common.back': 'वापस',
   'common.delete': 'हटाएँ',
   'common.undo': 'वापस लें',
   'common.you': 'आप',
@@ -227,6 +228,7 @@ export const hi: Dict = {
   // ---- group form ----
   'groupForm.newTitle': 'नया ग्रुप',
   'groupForm.editTitle': 'ग्रुप बदलें',
+  'groupForm.peopleTitle': 'लोग',
   'groupForm.name': 'ग्रुप का नाम',
   'groupForm.namePlaceholder': 'जैसे गोवा ट्रिप, रूम 204 मेस',
   'groupForm.type': 'टाइप',
@@ -366,6 +368,7 @@ export const hi: Dict = {
   'filter.searchAll': 'सभी खर्चों में खोजें',
   'expense.archivedBanner': 'आर्काइव: यह खर्च रखा है, पर कुल या हिसाब में नहीं गिना जाता।',
   'members.search': 'सदस्य खोजें',
+  'members.addPeople': 'लोग जोड़ें',
   'members.explain':
     '"दिया" वह है जो हर व्यक्ति ने ग्रुप के लिए खर्च किया। "हिस्सा" उन खर्चों में उसका सही हिस्सा है जिनमें वह शामिल था।',
   'members.noMatch.title': 'कोई नहीं मिला',
@@ -429,6 +432,9 @@ export const hi: Dict = {
   'expense.paidBy': 'किसने दिया',
   'expense.onePaid': 'एक व्यक्ति ने दिया',
   'expense.multiPaid': 'एक से ज़्यादा लोगों ने दिया?',
+  'expense.totalOfPayers': 'जिन्होंने दिया, उनका कुल',
+  'expense.payersTotal': 'कुल {amount}',
+  'expense.payersEmpty': 'हर व्यक्ति ने कितना दिया, लिखें',
   'expense.split': 'बँटवारा',
   'expense.mode.equal': 'बराबर',
   'expense.mode.exact': '₹ तय',
@@ -472,6 +478,8 @@ export const hi: Dict = {
   'expense.errPercentSum': 'प्रतिशत का जोड़ {total}% है। इसे 100% होना चाहिए।',
   'chat.title': 'चैट से पेस्ट करें',
   'chat.sub': 'खर्चे ग्रुप चैट में लिखे हैं? मैसेज यहाँ पेस्ट करें और कन्वर्ट दबाएँ।',
+  'chat.optional': 'वैकल्पिक',
+  'chat.fold': 'चैट से पेस्ट छोटा करें',
   'chat.paste': 'पेस्ट',
   'chat.clear': 'साफ़ करें',
   'chat.convert': 'कन्वर्ट',
@@ -532,7 +540,6 @@ export const hi: Dict = {
   'person.savedHint': 'यह नाम सिर्फ़ आपको दिखता है। यह इसी फ़ोन और आपके बैकअप में रहता है।',
   'person.forgetName': 'सेव किया नाम हटाएँ',
   'person.verified': 'सत्यापित ईमेल',
-  'person.unsavedHint': '~ वाला नाम उन्होंने खुद रखा है। अपना रखा नाम देखने के लिए नाम सेव करें।',
   'person.errEmpty': 'नाम लिखें।',
   'person.getsBack': 'वापस मिलेगा',
   'person.owes': 'देना है',
@@ -779,7 +786,6 @@ export const hi: Dict = {
   'push.channelActivity': 'ग्रुप की गतिविधि',
   'push.channelRequests': 'जुड़ने के अनुरोध',
   'push.channelNews': 'Vilarci के अपडेट',
-  'push.unsupported': 'सूचनाएँ Play Store वाले ऐप में आती हैं।',
   'push.signedOut': 'अपने लाइव ग्रुप की सूचनाएँ पाने के लिए साइन इन करें।',
   'push.denied': 'आपके फ़ोन की सेटिंग में Vilarci E-Split की सूचनाएँ बंद हैं।',
   'push.openSettings': 'फ़ोन की सेटिंग खोलें',

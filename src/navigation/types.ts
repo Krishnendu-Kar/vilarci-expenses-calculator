@@ -13,7 +13,8 @@ export type TabParamList = {
 export type RootStackParamList = {
   Main: NavigatorScreenParams<TabParamList> | undefined;
   /** `kind` preselects the type for a new group. */
-  GroupForm: { groupId?: string; kind?: GroupKind } | undefined;
+  /** people: an existing group's people only (from Members), the Add popup open. */
+  GroupForm: { groupId?: string; kind?: GroupKind; people?: boolean } | undefined;
   /** putOnlineAs: a group just created as Online goes up on opening, with this member as you. */
   GroupDetail: { groupId: string; putOnlineAs?: string };
   ExpenseForm: { groupId: string; expenseId?: string; date?: string };

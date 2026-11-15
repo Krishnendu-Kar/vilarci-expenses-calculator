@@ -4,6 +4,7 @@ import type { Dict } from './en';
 export const ta: Dict = {
   // ---- common ----
   'common.cancel': 'ரத்து',
+  'common.back': 'பின்செல்',
   'common.delete': 'நீக்கு',
   'common.undo': 'செயல்தவிர்',
   'common.you': 'நீங்கள்',
@@ -228,6 +229,7 @@ export const ta: Dict = {
   // ---- group form ----
   'groupForm.newTitle': 'புதிய குழு',
   'groupForm.editTitle': 'குழுவைத் திருத்து',
+  'groupForm.peopleTitle': 'நபர்கள்',
   'groupForm.name': 'குழுவின் பெயர்',
   'groupForm.namePlaceholder': 'எ.கா. கோவா பயணம், அறை 204 மெஸ்',
   'groupForm.type': 'வகை',
@@ -367,6 +369,7 @@ export const ta: Dict = {
   'filter.searchAll': 'எல்லாச் செலவுகளிலும் தேடு',
   'expense.archivedBanner': 'காப்பகத்தில்: இந்தச் செலவு வைக்கப்பட்டுள்ளது, ஆனால் மொத்தம் அல்லது கணக்குகளில் சேர்க்கப்படாது.',
   'members.search': 'உறுப்பினர்களைத் தேடு',
+  'members.addPeople': 'நபர்களைச் சேர்',
   'members.explain':
     '"செலுத்தியது" என்பது ஒவ்வொருவரும் குழுவுக்காகச் செலவிட்டது. "பங்கு" என்பது அவர் இருந்த செலவுகளில் அவருடைய நியாயமான பங்கு.',
   'members.noMatch.title': 'யாரும் கிடைக்கவில்லை',
@@ -430,6 +433,9 @@ export const ta: Dict = {
   'expense.paidBy': 'செலுத்தியவர்',
   'expense.onePaid': 'ஒருவர் செலுத்தினார்',
   'expense.multiPaid': 'ஒருவருக்கு மேல் செலுத்தினார்களா?',
+  'expense.totalOfPayers': 'செலுத்தியவர்களின் மொத்தம்',
+  'expense.payersTotal': 'மொத்தம் {amount}',
+  'expense.payersEmpty': 'ஒவ்வொருவரும் எவ்வளவு செலுத்தினார்கள் என்று எழுதவும்',
   'expense.split': 'பிரிவு',
   'expense.mode.equal': 'சமமாக',
   'expense.mode.exact': '₹ சரியாக',
@@ -473,6 +479,8 @@ export const ta: Dict = {
   'expense.errPercentSum': 'சதவீதங்களின் கூட்டு {total}%. அது 100% ஆக வேண்டும்.',
   'chat.title': 'சாட்டிலிருந்து ஒட்டு',
   'chat.sub': 'செலவுகள் குழு சாட்டில் உள்ளதா? மெசேஜ்களை இங்கே ஒட்டி மாற்று என்பதைத் தட்டவும்.',
+  'chat.optional': 'விருப்பம்',
+  'chat.fold': 'சாட்டிலிருந்து ஒட்டு பகுதியை மடக்கு',
   'chat.paste': 'ஒட்டு',
   'chat.clear': 'அழி',
   'chat.convert': 'மாற்று',
@@ -533,7 +541,6 @@ export const ta: Dict = {
   'person.savedHint': 'இந்தப் பெயர் உங்களுக்கு மட்டுமே தெரியும். இது இந்த ஃபோனிலும் உங்கள் பேக்அப்பிலும் இருக்கும்.',
   'person.forgetName': 'சேமித்த பெயரை நீக்கு',
   'person.verified': 'சரிபார்க்கப்பட்ட மின்னஞ்சல்',
-  'person.unsavedHint': '~ உள்ள பெயர் அவர்களே வைத்தது. நீங்கள் வைக்கும் பெயரைப் பார்க்க, பெயரைச் சேமியுங்கள்.',
   'person.errEmpty': 'ஒரு பெயரை உள்ளிடவும்.',
   'person.getsBack': 'திரும்பப் பெறுவார்',
   'person.owes': 'தர வேண்டும்',
@@ -781,7 +788,6 @@ export const ta: Dict = {
   'push.channelActivity': 'குழு செயல்பாடு',
   'push.channelRequests': 'சேரும் கோரிக்கைகள்',
   'push.channelNews': 'Vilarci புதுப்பிப்புகள்',
-  'push.unsupported': 'அறிவிப்புகள் Play Store ஆப்பில் வரும்.',
   'push.signedOut': 'உங்கள் நேரலைக் குழுக்களின் அறிவிப்புகளைப் பெற உள்நுழையவும்.',
   'push.denied': 'உங்கள் தொலைபேசி அமைப்புகளில் Vilarci E-Split அறிவிப்புகள் அணைக்கப்பட்டுள்ளன.',
   'push.openSettings': 'தொலைபேசி அமைப்புகளைத் திற',

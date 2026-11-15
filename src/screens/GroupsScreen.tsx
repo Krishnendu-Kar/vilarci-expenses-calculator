@@ -439,6 +439,8 @@ export function GroupsScreen({ navigation }: TabProps<'Home'>) {
       )}
       <Fab
         label={t('home.newGroup')}
+        // "New group" for the first 5 seconds after the app opens, then just "+".
+        shrinkAfter={5000}
         // Starting from a type filter, the new group gets that type.
         onPress={() =>
           navigation.navigate(
