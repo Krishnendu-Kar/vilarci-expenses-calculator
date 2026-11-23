@@ -72,7 +72,11 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
 
   const existingPayers = existing ? Object.keys(existing.payers) : [];
   const [multiPay, setMultiPay] = useState(existingPayers.length > 1);
-  const [payer, setPayer] = useState(existingPayers[0] ?? allIds[0] ?? '');
+  // A new expense starts with nobody picked: a first name filled in by itself
+  // went unnoticed and charged the wrong person (user, 2026-11-22).
+  const [payer, setPayer] = useState(existingPayers[0] ?? '');
+  // Add was tapped with nobody picked: the Paid by card turns red until someone is.
+  const [askPayer, setAskPayer] = useState(false);
   const [payerTexts, setPayerTexts] = useState<Texts>(() =>
     existingPayers.length > 1 ? mapValues(existing!.payers, paiseToInput) : {},
   );
@@ -124,7 +128,7 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
     setMonthPick(f.month ?? null);
     setNote(f.note);
     setMultiPay(f.multiPay);
-    if (ids.has(f.payer)) setPayer(f.payer);
+    setPayer(ids.has(f.payer) ? f.payer : '');
     setPayerTexts(f.payerTexts);
     setMode(f.mode);
     setSelected(f.selected.filter((id) => ids.has(id)));
@@ -207,7 +211,7 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
       month: null,
       note: '',
       multiPay: false,
-      payer: allIds[0] ?? '',
+      payer: '',
       payerTexts: {},
       mode: 'equal',
       selected: allIds,
@@ -286,7 +290,7 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
   };
 
   const togglePayerMode = () => {
-    if (!multiPay && amount) {
+    if (!multiPay && amount && payer) {
       // Start from "the one payer paid it all" so the numbers already add up.
       setPayerTexts({ [payer]: paiseToInput(amount) });
     }
@@ -312,7 +316,10 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
       const paid = Object.values(payers).reduce((s, v) => s + v, 0);
       if (paid !== amount) return setError(t('expense.errPaidSum', { paid: money(paid), amount: money(amount) }));
     } else {
-      if (!payer) return setError(t('expense.errPickPayer'));
+      if (!payer) {
+        setAskPayer(true);
+        return setError(t('expense.errPickPayer'));
+      }
       payers = { [payer]: amount };
     }
 
@@ -369,7 +376,10 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
     if (!existing) return;
     confirmAction(t('expense.deleteTitle'), t('expense.deleteBody', { name: existing.title }), t('common.delete'), () => {
       deleteExpense(group.id, existing.id);
-      navigation.goBack();
+      // Opened from the expense's own page: that page goes too, back to the group.
+      const nav = navigation.getState();
+      if (nav.routes[nav.index - 1]?.name === 'Expense') navigation.pop(2);
+      else navigation.goBack();
       showUndo(t('expense.deleted', { name: existing.title }), () => saveExpense(group.id, existing));
     });
   };
@@ -519,6 +529,7 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
               <FormSection
                 icon="wallet-outline"
                 title={t('expense.paidBy')}
+                attention={askPayer && !multiPay && !payer}
                 right={
                   <Pressable onPress={togglePayerMode} hitSlop={8}>
                     <Text style={styles.link}>{multiPay ? t('expense.onePaid') : t('expense.multiPaid')}</Text>
@@ -547,7 +558,13 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
                       return (
                         <Pressable
                           key={m.id}
-                          onPress={() => setPayer(m.id)}
+                          onPress={() => {
+                            setPayer(m.id);
+                            if (askPayer) {
+                              setAskPayer(false);
+                              setError(null);
+                            }
+                          }}
                           accessibilityRole="radio"
                           accessibilityState={{ checked: on }}
                           style={({ pressed }) => [styles.payer, on && styles.payerOn, pressed && styles.pressed]}
@@ -561,6 +578,10 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
                         </Pressable>
                       );
                     })}
+                    {/* Nobody is picked for you: say so, red once Add was tapped. */}
+                    {!payer ? (
+                      <Text style={[styles.pickHint, askPayer ? styles.bad : styles.muted]}>{t('expense.errPickPayer')}</Text>
+                    ) : null}
                   </View>
                 )}
               </FormSection>
@@ -835,6 +856,7 @@ const useStyles = makeStyles((c) => ({
   ringOn: { borderColor: c.white },
   payerName: { fontSize: font.sm + 1, fontWeight: '600', color: c.textPrimary, maxWidth: 140 },
   payerNameOn: { color: c.onPrimary, fontWeight: '700' },
+  pickHint: { width: '100%', fontSize: font.sm + 1, fontWeight: '600', marginTop: spacing(0.5) },
   help: { fontSize: font.sm, color: c.textSecondary, marginTop: spacing(3), marginBottom: spacing(2), lineHeight: 18 },
   splitHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing(2), paddingVertical: spacing(1) },
   splitInfo: { fontSize: font.sm + 1, color: c.textSecondary, fontWeight: '600', flex: 1 },

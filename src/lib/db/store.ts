@@ -102,6 +102,8 @@ const SETTING = {
   /** Google Drive backup: the last one ({ at, size }) and auto backup every 0 / 1 / 7 days. */
   driveLast: 'drive_last',
   driveAuto: 'drive_auto',
+  /** When Home's "Restore from Google Drive" card was closed or no longer needed (it shows until then). */
+  restoreOffer: 'restore_offer',
   /** Local groups waiting for internet to go online (JSON list of group ids). */
   onlineQueue: 'online_queue',
   /** The New group form, unsaved (JSON, see lib/groupDraft). */
@@ -156,6 +158,7 @@ export type SettingKey =
   | 'newsSeen'
   | 'driveLast'
   | 'driveAuto'
+  | 'restoreOffer'
   | 'onlineQueue'
   | 'groupDraft';
 

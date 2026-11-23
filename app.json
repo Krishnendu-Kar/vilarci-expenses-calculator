@@ -32,6 +32,11 @@
               "scheme": "https",
               "host": "esplit.vilarci.in",
               "pathPrefix": "/join/"
+            },
+            {
+              "scheme": "https",
+              "host": "esplit.vilarci.in",
+              "pathPrefix": "/e/"
             }
           ],
           "category": [

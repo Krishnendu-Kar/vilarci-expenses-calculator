@@ -32,7 +32,8 @@ import { useMenu, type MenuAnchor, type MenuItem } from '../context/MenuContext'
 import { useLock } from '../context/LockContext';
 import { useSync } from '../context/SyncContext';
 import { useNews } from '../context/NewsContext';
-import { getLastBackup, loadSetting } from '../lib/storage';
+import { getLastBackup, loadSetting, saveSetting } from '../lib/storage';
+import { googleAvailable } from '../lib/api/google';
 import { autoBackupIfDue } from '../lib/autoBackup';
 import { installInviteCode } from '../lib/installReferrer';
 import { usePutOnline } from './group/usePutOnline';
@@ -142,6 +143,30 @@ export function GroupsScreen({ navigation }: TabProps<'Home'>) {
       current = false;
     };
   }, [navigation]);
+
+  // A new phone with no groups of its own: offer the Drive backup, until it's
+  // closed or a group is on the phone (live groups come back by signing in,
+  // so they don't count).
+  const hasLocal = groups.some((g) => !g.online && !isLocked(prefs[g.id]));
+  const [offerRestore, setOfferRestore] = useState(false);
+  useEffect(() => {
+    if (!ready || !googleAvailable()) return;
+    let current = true;
+    loadSetting('restoreOffer')
+      .then((done) => {
+        if (!current || done) return;
+        if (hasLocal) void saveSetting('restoreOffer', String(Date.now()));
+        else setOfferRestore(true);
+      })
+      .catch(() => {});
+    return () => {
+      current = false;
+    };
+  }, [ready, hasLocal]);
+  const closeRestore = () => {
+    setOfferRestore(false);
+    void saveSetting('restoreOffer', String(Date.now())).catch(() => {});
+  };
 
   // Locked groups are off the lists (like WhatsApp's locked chats). Pulling a
   // list down shows a "Locked groups" row; it hides again once you go elsewhere.
@@ -310,6 +335,23 @@ export function GroupsScreen({ navigation }: TabProps<'Home'>) {
               </View>
               <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
             </Pressable>
+          ) : null}
+          {offerRestore && !hasLocal ? (
+            <View style={styles.restore}>
+              <View style={styles.lockedIcon}>
+                <Ionicons name="logo-google" size={18} color={colors.tint} />
+              </View>
+              <View style={styles.flex}>
+                <Text style={styles.lockedTitle}>{t('home.restore.title')}</Text>
+                <Text style={styles.restoreBody}>{t('home.restore.body')}</Text>
+                <Pressable onPress={() => navigation.navigate('Backup', { find: true })} hitSlop={8} style={styles.restoreGo}>
+                  <Text style={styles.restoreLink}>{t('home.restore.button')}</Text>
+                </Pressable>
+              </View>
+              <Pressable onPress={closeRestore} hitSlop={10} accessibilityRole="button" accessibilityLabel={t('join.notNow')}>
+                <Ionicons name="close" size={20} color={colors.textSecondary} />
+              </Pressable>
+            </View>
           ) : null}
           {needsBackup && groups.length ? (
             <Pressable onPress={() => navigation.navigate('Export')} style={styles.nag}>
@@ -737,6 +779,20 @@ const useStyles = makeStyles((c) => ({
     padding: spacing(3.5),
     marginBottom: spacing(5),
   },
+  restore: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing(3),
+    backgroundColor: c.surface,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderColor: c.border,
+    padding: spacing(3.5),
+    marginBottom: spacing(3),
+  },
+  restoreBody: { fontSize: font.sm, color: c.textSecondary, lineHeight: 18, marginTop: 2 },
+  restoreGo: { alignSelf: 'flex-start', marginTop: spacing(2.5) },
+  restoreLink: { fontSize: font.sm, fontWeight: '700', color: c.tint },
   nagText: { flex: 1, fontSize: font.sm, color: c.textPrimary, lineHeight: 18 },
   importLink: { textAlign: 'center', color: c.tint, fontWeight: '700', fontSize: font.md },
   // A compact row, close to a chat list: rows sit almost edge to edge.

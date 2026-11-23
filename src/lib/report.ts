@@ -1,8 +1,9 @@
-import type { Group, UpiId } from '../types';
+import type { Expense, Group, UpiId } from '../types';
 import {
   categoryTotals,
   computeBalances,
   counted,
+  expenseShares,
   groupTotal,
   activeIn,
   isSettled,
@@ -12,9 +13,9 @@ import {
   type Transfer,
 } from './split';
 import { balanceWords, payerLong, splitLong } from './describe';
-import { money } from './money';
+import { money, paiseToInput } from './money';
 import { vpaList } from './upi';
-import { longDate } from './format';
+import { longDate, monthLabel } from './format';
 import { categoryOf, groupKindOf } from '../data/categories';
 import { LOGO_DATA_URI } from '../data/logo';
 import { dateLocale, getLang, translate as t } from '../i18n';
@@ -63,6 +64,60 @@ function collect(group: Group): ReportData {
     range: !first ? '' : first === last ? longDate(first) : `${longDate(first)} – ${longDate(last)}`,
   };
 }
+
+/**
+ * One expense as a chat message (⋮ → Share): what it was, who paid, each
+ * person's part, the note, and the link that opens it in the app for people
+ * in the group (`link`, live groups only). The message carries the details
+ * itself, so it reads the same with or without the app. Group names, like
+ * the other reports.
+ */
+export function buildExpenseText(group: Group, e: Expense, link?: string | null) {
+  const names = Object.fromEntries(group.members.map((m) => [m.id, m.name]));
+  const order = new Map(group.members.map((m, i) => [m.id, i]));
+  const byGroup = (ids: string[]) => [...ids].sort((a, b) => (order.get(a) ?? 1e9) - (order.get(b) ?? 1e9));
+  const shares = expenseShares(e);
+  const setAs = (id: string) => {
+    const v = e.splitValues?.[id];
+    if (v == null) return '';
+    if (e.splitMode === 'shares') return ` (${v}x)`;
+    if (e.splitMode === 'percent') return ` (${paiseToInput(v)}%)`;
+    return '';
+  };
+  const payerIds = byGroup(Object.keys(e.payers));
+  const payers =
+    payerIds.length === 1
+      ? (names[payerIds[0]] ?? '?')
+      : payerIds.map((id) => `${names[id] ?? '?'} ${money(e.payers[id])}`).join(' + ');
+  const where = [
+    group.name,
+    longDate(e.date),
+    categoryOf(e.category).label,
+    ...(group.kind === 'hostel' && e.month ? [t('expenses.forMonth', { month: monthLabel(e.month) })] : []),
+  ].join(' · ');
+
+  const lines = [
+    t('expShare.title', { title: e.title, amount: money(e.amount) }),
+    where,
+    ...(counted(e) ? [] : [t('expShare.archived')]),
+    '',
+    t('expShare.paidBy', { payers }),
+    t(SPLIT_HEAD[e.splitMode]),
+    ...byGroup(e.splitAmong).map((id) => `• ${names[id] ?? '?'} ${money(shares[id] ?? 0)}${setAs(id)}`),
+    ...(e.note ? [`📝 ${e.note}`] : []),
+    '',
+    ...(link ? [t('expShare.open', { link })] : []),
+    t('report.footer'),
+  ];
+  return lines.join('\n');
+}
+
+const SPLIT_HEAD = {
+  equal: 'expShare.splitEqual',
+  exact: 'expShare.splitExact',
+  shares: 'expShare.splitShares',
+  percent: 'expShare.splitPercent',
+} as const;
 
 /** WhatsApp-friendly text (*bold* renders in WhatsApp, reads fine elsewhere). */
 export function buildTextReport(group: Group, pay?: PayTo) {

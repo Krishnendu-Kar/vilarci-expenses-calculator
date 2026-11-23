@@ -16,6 +16,7 @@ import { dayLabel, monthLabel, toISODate } from '../../lib/format';
 import { loadEvents } from '../../lib/storage';
 import { describeEvent, type ActivityEvent } from '../../lib/activity';
 import { payerText, splitShort } from '../../lib/describe';
+import { shareExpense } from '../../lib/shareExpense';
 import { categoryOf } from '../../data/categories';
 import { makeStyles, useTheme } from '../../theme/ThemeContext';
 import { useI18n } from '../../i18n/I18nContext';
@@ -81,8 +82,8 @@ export function ExpensesTab({ group, shown, filter, onFilter, onOpenFilter, name
   const { colors } = useTheme();
   const i18n = useI18n();
   const { deleteExpense, saveExpense, pinExpense, archiveExpense } = useGroups();
-  const { showUndo, showNote } = useUndo();
-  // Live groups where only admins add expenses: the rows still read, but don't open.
+  const { showUndo } = useUndo();
+  // Live groups where only admins add expenses: the rows open to read, and ⋮ only shares.
   const editable = can('edit_expenses', group);
   const { openMenu } = useMenu();
   const [query, setQuery] = useState('');
@@ -167,23 +168,30 @@ export function ExpensesTab({ group, shown, filter, onFilter, onOpenFilter, name
   );
 
   // ---- the ⋮ menu on each expense ----
+  // Share is for everyone who can see the expense; the rest only where you may change it.
   const menuItems = (e: Expense): MenuItem[] => [
-    ...(counted(e)
+    { key: 'share', icon: 'share-social-outline', title: i18n.t('expMenu.share') },
+    ...(editable
       ? [
-          e.pinnedAt != null
-            ? { key: 'unpin', icon: 'remove-circle-outline' as const, title: i18n.t('expMenu.unpin') }
-            : { key: 'pin', icon: 'pin-outline' as const, title: i18n.t('expMenu.pin') },
+          ...(counted(e)
+            ? [
+                e.pinnedAt != null
+                  ? { key: 'unpin', icon: 'remove-circle-outline' as const, title: i18n.t('expMenu.unpin') }
+                  : { key: 'pin', icon: 'pin-outline' as const, title: i18n.t('expMenu.pin') },
+              ]
+            : []),
+          counted(e)
+            ? { key: 'archive', icon: 'archive-outline' as const, title: i18n.t('expMenu.archive') }
+            : { key: 'unarchive', icon: 'arrow-undo-outline' as const, title: i18n.t('expMenu.unarchive') },
+          { key: 'delete', icon: 'trash-outline' as const, title: i18n.t('expMenu.delete'), danger: true },
         ]
       : []),
-    counted(e)
-      ? { key: 'archive', icon: 'archive-outline', title: i18n.t('expMenu.archive') }
-      : { key: 'unarchive', icon: 'arrow-undo-outline', title: i18n.t('expMenu.unarchive') },
-    { key: 'delete', icon: 'trash-outline', title: i18n.t('expMenu.delete'), danger: true },
   ];
 
   const showMenu = (e: Expense, anchor: MenuAnchor) => openMenu(anchor, menuItems(e), (key) => pickMenu(e, key));
 
   const pickMenu = (e: Expense, key: string) => {
+    if (key === 'share') return shareExpense(group, e);
     if (key === 'pin' || key === 'unpin') return pinExpense(group.id, e.id, key === 'pin');
     if (key === 'archive') {
       archiveExpense(group.id, e.id, true);
@@ -265,8 +273,9 @@ export function ExpensesTab({ group, shown, filter, onFilter, onOpenFilter, name
         const archived = !counted(item);
         return (
           <Pressable
-            onPress={() => (editable ? onOpen(item) : showNote(i18n.t('expenses.onlyAdmins')))}
-            onLongPress={(e) => editable && showMenu(item, pressPoint(e))}
+            // Everyone can open an expense to read it; its page has the pencil when you may change it.
+            onPress={() => onOpen(item)}
+            onLongPress={(e) => showMenu(item, pressPoint(e))}
             style={({ pressed }) => [t.row, styles.row, archived && styles.archivedRow, pressed && t.pressed]}
           >
             <View style={styles.catIcon}>
@@ -295,7 +304,7 @@ export function ExpensesTab({ group, shown, filter, onFilter, onOpenFilter, name
                 {item.note ? <Ionicons name="document-text-outline" size={13} color={colors.textSecondary} /> : null}
               </View>
             </View>
-            {editable ? <MoreButton size={17} style={styles.more} onOpen={(anchor) => showMenu(item, anchor)} /> : null}
+            <MoreButton size={17} style={styles.more} onOpen={(anchor) => showMenu(item, anchor)} />
           </Pressable>
         );
       }}

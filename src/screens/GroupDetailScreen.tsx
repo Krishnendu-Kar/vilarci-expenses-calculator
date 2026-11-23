@@ -422,7 +422,7 @@ export function GroupDetailScreen({ navigation, route }: ScreenProps<'GroupDetai
             onFilter={setFilter}
             onOpenFilter={() => setFilterOpen(true)}
             names={names}
-            onOpen={(e) => navigation.navigate('ExpenseForm', { groupId: group.id, expenseId: e.id })}
+            onOpen={(e) => navigation.navigate('Expense', { groupId: group.id, expenseId: e.id })}
           />
           <MembersTab group={group} balances={balances} names={names} meId={meId} />
           <SettleTab group={group} transfers={transfers} names={names} meId={meId} onShare={() => setSheetOpen(true)} />

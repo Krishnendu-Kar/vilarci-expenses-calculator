@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { DarkTheme, DefaultTheme, NavigationContainer, type LinkingOptions, type Theme } from '@react-navigation/native';
 import { Platform } from 'react-native';
 import { INVITE_HOST, joinPathCode } from '../lib/invite';
+import { expensePath } from '../lib/expenseLink';
 import { navigationRef } from './navigationRef';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -12,6 +13,8 @@ import { ProfileScreen } from '../screens/ProfileScreen';
 import { GroupFormScreen } from '../screens/GroupFormScreen';
 import { GroupDetailScreen } from '../screens/GroupDetailScreen';
 import { ExpenseFormScreen } from '../screens/ExpenseFormScreen';
+import { ExpenseScreen } from '../screens/ExpenseScreen';
+import { OpenExpenseScreen } from '../screens/OpenExpenseScreen';
 import { PersonScreen } from '../screens/PersonScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { AppearanceScreen } from '../screens/AppearanceScreen';
@@ -95,6 +98,11 @@ function MainTabs() {
 const linking: LinkingOptions<RootStackParamList> = {
   prefixes: ['vesplit://', `https://${INVITE_HOST}`],
   getStateFromPath: (path) => {
+    // A shared expense: https://esplit.vilarci.in/e/<group>/<expense>, a card over Home that finds it.
+    const shared = expensePath(path);
+    if (shared !== null) {
+      return { routes: [{ name: 'Main' }, { name: 'OpenExpense' as const, params: shared === 'broken' ? {} : shared }] };
+    }
     const code = joinPathCode(path);
     return {
       routes: [{ name: 'Main' }, ...(code === null ? [] : [{ name: 'Join' as const, params: code ? { code } : undefined }])],
@@ -143,6 +151,7 @@ export function RootNavigator() {
           component={ExpenseFormScreen}
           options={({ route }) => ({ title: route.params.expenseId ? t('expense.editTitle') : t('expense.addTitle') })}
         />
+        <Stack.Screen name="Expense" component={ExpenseScreen} options={{ title: t('expense.viewTitle') }} />
         {/* No top bar: the page shows the name big; a round back button sits on the page. */}
         <Stack.Screen name="Person" component={PersonScreen} options={{ title: '', headerShown: false }} />
         <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: t('settings.title') }} />
@@ -162,6 +171,12 @@ export function RootNavigator() {
           name="Join"
           component={JoinScreen}
           options={{ title: t('join.title'), headerShown: false, presentation: 'transparentModal', animation: 'fade' }}
+        />
+        {/* A shared expense link: a card over Home, like Join. */}
+        <Stack.Screen
+          name="OpenExpense"
+          component={OpenExpenseScreen}
+          options={{ title: t('expense.viewTitle'), headerShown: false, presentation: 'transparentModal', animation: 'fade' }}
         />
         <Stack.Screen name="GroupSettings" component={GroupSettingsScreen} options={{ title: t('gsettings.title') }} />
         <Stack.Screen name="Activity" component={ActivityScreen} options={{ title: t('activity.title') }} />

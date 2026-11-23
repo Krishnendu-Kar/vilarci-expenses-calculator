@@ -17,7 +17,12 @@ export type RootStackParamList = {
   GroupForm: { groupId?: string; kind?: GroupKind; people?: boolean } | undefined;
   /** putOnlineAs: a group just created as Online goes up on opening, with this member as you. */
   GroupDetail: { groupId: string; putOnlineAs?: string };
+  /** Add an expense, or edit one (`expenseId`, from its page's pencil). */
   ExpenseForm: { groupId: string; expenseId?: string; date?: string };
+  /** One expense to read (everyone in the group); the pencil opens ExpenseForm. */
+  Expense: { groupId: string; expenseId: string };
+  /** A shared expense link opened the app: finds it, or says why it can't. No ids: a broken link. */
+  OpenExpense: { groupId?: string; expenseId?: string } | undefined;
   Person: { personId: string };
   Settings: undefined;
   Appearance: undefined;
@@ -41,7 +46,8 @@ export type RootStackParamList = {
   /** What the app does and how to use it: first start, or Settings → How to use. */
   Welcome: undefined;
   /** Settings → Google Drive backup. */
-  Backup: undefined;
+  /** `find`: open the backup list straight away (Home's restore card). */
+  Backup: { find?: boolean } | undefined;
   /** Settings → Notifications: on or off, which kinds, muted groups. */
   Notifications: undefined;
   /** The bell on Home: important notices, updates and news from Vilarci (not group activity). */

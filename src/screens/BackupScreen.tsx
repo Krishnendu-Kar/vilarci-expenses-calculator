@@ -27,7 +27,7 @@ const when = (ms: number) => `${shortDate(ms)}, ${new Date(ms).toLocaleTimeStrin
  * up now, automatically (daily or weekly, when the app opens), or restore
  * through the usual Import preview.
  */
-export function BackupScreen({ navigation }: ScreenProps<'Backup'>) {
+export function BackupScreen({ navigation, route }: ScreenProps<'Backup'>) {
   const { groups, people } = useGroups();
   const { showNote } = useUndo();
   const styles = useStyles();
@@ -75,6 +75,13 @@ export function BackupScreen({ navigation }: ScreenProps<'Backup'>) {
       setBusy(null);
     }
   };
+
+  // From Home's restore card: the account chooser and the list right away.
+  const find = route.params?.find;
+  useEffect(() => {
+    if (find && available) void showRestore();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [find]);
 
   // The file goes to the Import page, which previews it before anything changes.
   const restore = async (f: DriveFile) => {
