@@ -17,10 +17,15 @@ export type RootStackParamList = {
   GroupForm: { groupId?: string; kind?: GroupKind; people?: boolean } | undefined;
   /** putOnlineAs: a group just created as Online goes up on opening, with this member as you. */
   GroupDetail: { groupId: string; putOnlineAs?: string };
-  /** Add an expense, or edit one (`expenseId`, from its page's pencil). */
-  ExpenseForm: { groupId: string; expenseId?: string; date?: string };
+  /**
+   * Add an expense, or edit one (`expenseId`, from its page's pencil).
+   * `copyFrom`: a new expense filled in from that one (⋮ → Make a copy).
+   */
+  ExpenseForm: { groupId: string; expenseId?: string; date?: string; copyFrom?: string };
   /** One expense to read (everyone in the group); the pencil opens ExpenseForm. */
   Expense: { groupId: string; expenseId: string };
+  /** ⋮ → Info on an expense: its history (who added it, every change). */
+  ExpenseInfo: { groupId: string; expenseId: string };
   /** A shared expense link opened the app: finds it, or says why it can't. No ids: a broken link. */
   OpenExpense: { groupId?: string; expenseId?: string } | undefined;
   Person: { personId: string };

@@ -4,11 +4,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { EmptyState } from '../../components/EmptyState';
 import { SearchBar } from '../../components/SearchBar';
 import { MoreButton, pressPoint } from '../../components/MoreButton';
-import { useGroups } from '../../context/GroupsContext';
-import { useUndo } from '../../context/UndoContext';
-import { useMenu, type MenuAnchor, type MenuItem } from '../../context/MenuContext';
+import { useMenu, type MenuAnchor } from '../../context/MenuContext';
 import { activeIn, counted, sortExpenses } from '../../lib/split';
-import { can } from '../../lib/permissions';
 import { searchExpenses } from '../../lib/search';
 import { expenseMonth, isFiltered, NO_FILTER, type ExpenseFilter } from '../../lib/months';
 import { money } from '../../lib/money';
@@ -16,13 +13,13 @@ import { dayLabel, monthLabel, toISODate } from '../../lib/format';
 import { loadEvents } from '../../lib/storage';
 import { describeEvent, type ActivityEvent } from '../../lib/activity';
 import { payerText, splitShort } from '../../lib/describe';
-import { shareExpense } from '../../lib/shareExpense';
 import { categoryOf } from '../../data/categories';
 import { makeStyles, useTheme } from '../../theme/ThemeContext';
 import { useI18n } from '../../i18n/I18nContext';
 import { font, radii, spacing } from '../../theme/tokens';
 import { useTabStyles } from './styles';
 import { FilterChips } from './FilterChips';
+import { useExpenseMenu } from '../expense/useExpenseMenu';
 import type { Expense, Group } from '../../types';
 
 interface Props {
@@ -81,10 +78,6 @@ export function ExpensesTab({ group, shown, filter, onFilter, onOpenFilter, name
   const styles = useStyles();
   const { colors } = useTheme();
   const i18n = useI18n();
-  const { deleteExpense, saveExpense, pinExpense, archiveExpense } = useGroups();
-  const { showUndo } = useUndo();
-  // Live groups where only admins add expenses: the rows open to read, and ⋮ only shares.
-  const editable = can('edit_expenses', group);
   const { openMenu } = useMenu();
   const [query, setQuery] = useState('');
   const [archivedOpen, setArchivedOpen] = useState(false);
@@ -167,41 +160,9 @@ export function ExpensesTab({ group, shown, filter, onFilter, onOpenFilter, name
     <EmptyState icon="receipt-outline" title={i18n.t('expenses.empty.title')} body={i18n.t('expenses.empty.body')} />
   );
 
-  // ---- the ⋮ menu on each expense ----
-  // Share is for everyone who can see the expense; the rest only where you may change it.
-  const menuItems = (e: Expense): MenuItem[] => [
-    { key: 'share', icon: 'share-social-outline', title: i18n.t('expMenu.share') },
-    ...(editable
-      ? [
-          ...(counted(e)
-            ? [
-                e.pinnedAt != null
-                  ? { key: 'unpin', icon: 'remove-circle-outline' as const, title: i18n.t('expMenu.unpin') }
-                  : { key: 'pin', icon: 'pin-outline' as const, title: i18n.t('expMenu.pin') },
-              ]
-            : []),
-          counted(e)
-            ? { key: 'archive', icon: 'archive-outline' as const, title: i18n.t('expMenu.archive') }
-            : { key: 'unarchive', icon: 'arrow-undo-outline' as const, title: i18n.t('expMenu.unarchive') },
-          { key: 'delete', icon: 'trash-outline' as const, title: i18n.t('expMenu.delete'), danger: true },
-        ]
-      : []),
-  ];
-
-  const showMenu = (e: Expense, anchor: MenuAnchor) => openMenu(anchor, menuItems(e), (key) => pickMenu(e, key));
-
-  const pickMenu = (e: Expense, key: string) => {
-    if (key === 'share') return shareExpense(group, e);
-    if (key === 'pin' || key === 'unpin') return pinExpense(group.id, e.id, key === 'pin');
-    if (key === 'archive') {
-      archiveExpense(group.id, e.id, true);
-      showUndo(i18n.t('expenses.archivedDone', { name: e.title }), () => archiveExpense(group.id, e.id, false));
-    } else if (key === 'unarchive') archiveExpense(group.id, e.id, false);
-    else if (key === 'delete') {
-      deleteExpense(group.id, e.id);
-      showUndo(i18n.t('expense.deleted', { name: e.title }), () => saveExpense(group.id, e));
-    }
-  };
+  // ---- the ⋮ menu on each expense (the same one as on the expense's page) ----
+  const menu = useExpenseMenu(group);
+  const showMenu = (e: Expense, anchor: MenuAnchor) => openMenu(anchor, menu.items(e), (key) => menu.pick(e, key));
 
   return (
     <SectionList

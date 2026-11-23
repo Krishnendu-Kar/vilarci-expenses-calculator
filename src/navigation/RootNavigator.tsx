@@ -14,6 +14,7 @@ import { GroupFormScreen } from '../screens/GroupFormScreen';
 import { GroupDetailScreen } from '../screens/GroupDetailScreen';
 import { ExpenseFormScreen } from '../screens/ExpenseFormScreen';
 import { ExpenseScreen } from '../screens/ExpenseScreen';
+import { ExpenseInfoScreen } from '../screens/ExpenseInfoScreen';
 import { OpenExpenseScreen } from '../screens/OpenExpenseScreen';
 import { PersonScreen } from '../screens/PersonScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
@@ -152,6 +153,7 @@ export function RootNavigator() {
           options={({ route }) => ({ title: route.params.expenseId ? t('expense.editTitle') : t('expense.addTitle') })}
         />
         <Stack.Screen name="Expense" component={ExpenseScreen} options={{ title: t('expense.viewTitle') }} />
+        <Stack.Screen name="ExpenseInfo" component={ExpenseInfoScreen} options={{ title: t('expInfo.title') }} />
         {/* No top bar: the page shows the name big; a round back button sits on the page. */}
         <Stack.Screen name="Person" component={PersonScreen} options={{ title: '', headerShown: false }} />
         <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: t('settings.title') }} />

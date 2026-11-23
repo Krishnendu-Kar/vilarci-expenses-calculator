@@ -44,7 +44,7 @@ const SPLIT_OPTIONS: { key: SplitMode; label: Key; help: Key }[] = [
 const bpToInput = (bp: number) => paiseToInput(bp);
 
 export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseForm'>) {
-  const { groupId, expenseId } = route.params;
+  const { groupId, expenseId, copyFrom } = route.params;
   const group = useGroup(groupId);
   const { saveExpense, deleteExpense, names } = useGroups();
   const { showUndo } = useUndo();
@@ -52,6 +52,10 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
   const { colors, dark } = useTheme();
   const { t } = useI18n();
   const existing = group?.expenses.find((e) => e.id === expenseId);
+  // ⋮ → Make a copy: a new expense filled in from this one, dated today. Read once, on opening.
+  const [copied] = useState(() => (!existing && copyFrom ? group?.expenses.find((e) => e.id === copyFrom) : undefined));
+  // Where the form's first values come from: the expense being edited, or the one copied.
+  const base = existing ?? copied;
   // Names as this phone shows them ("~Name" for accounts you haven't saved); only for show.
   // Only people still in the group, plus anyone gone who is already in this expense.
   const members = useMemo(() => {
@@ -60,49 +64,53 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
   }, [group?.members, existing, names]);
   const allIds = members.map((m) => m.id);
   const hostel = group?.kind === 'hostel';
+  // A copy leaves out anyone who has left the group since (editing keeps them).
+  const onlyHere = (r: Record<string, number>) => Object.fromEntries(Object.entries(r).filter(([id]) => allIds.includes(id)));
 
-  const [title, setTitle] = useState(existing?.title ?? '');
-  const [amountText, setAmountText] = useState(existing ? paiseToInput(existing.amount) : '');
-  const [category, setCategory] = useState<CategoryKey>(existing?.category ?? 'food');
+  const [title, setTitle] = useState(base?.title ?? '');
+  const [amountText, setAmountText] = useState(base ? paiseToInput(base.amount) : '');
+  const [category, setCategory] = useState<CategoryKey>(base?.category ?? 'food');
   const [date, setDate] = useState(existing?.date ?? route.params.date ?? todayISO());
   // Hostel/flat groups: a month picked by hand ("counts for"); null follows the date.
   const [monthPick, setMonthPick] = useState<string | null>(existing?.month ?? null);
   const [monthOpen, setMonthOpen] = useState(false);
-  const [note, setNote] = useState(existing?.note ?? '');
+  const [note, setNote] = useState(base?.note ?? '');
 
-  const existingPayers = existing ? Object.keys(existing.payers) : [];
-  const [multiPay, setMultiPay] = useState(existingPayers.length > 1);
+  const basePayers = base ? Object.keys(onlyHere(base.payers)) : [];
+  const [multiPay, setMultiPay] = useState(basePayers.length > 1);
   // A new expense starts with nobody picked: a first name filled in by itself
   // went unnoticed and charged the wrong person (user, 2026-11-22).
-  const [payer, setPayer] = useState(existingPayers[0] ?? '');
+  const [payer, setPayer] = useState(basePayers[0] ?? '');
   // Add was tapped with nobody picked: the Paid by card turns red until someone is.
   const [askPayer, setAskPayer] = useState(false);
   const [payerTexts, setPayerTexts] = useState<Texts>(() =>
-    existingPayers.length > 1 ? mapValues(existing!.payers, paiseToInput) : {},
+    basePayers.length > 1 ? mapValues(onlyHere(base!.payers), paiseToInput) : {},
   );
 
-  const [mode, setMode] = useState<SplitMode>(existing?.splitMode ?? 'equal');
+  const [mode, setMode] = useState<SplitMode>(base?.splitMode ?? 'equal');
   const [selected, setSelected] = useState<string[]>(
-    existing?.splitMode === 'equal' ? existing.splitAmong : allIds,
+    base?.splitMode === 'equal' ? base.splitAmong.filter((id) => allIds.includes(id)) : allIds,
   );
   // Each custom mode keeps its own entries, so flipping between tabs loses nothing.
   const [values, setValues] = useState<Record<CustomMode, Texts>>(() => {
     const v: Record<CustomMode, Texts> = { exact: {}, shares: {}, percent: {} };
-    if (existing && existing.splitMode !== 'equal' && existing.splitValues) {
-      const fmt = existing.splitMode === 'shares' ? String : existing.splitMode === 'exact' ? paiseToInput : bpToInput;
-      v[existing.splitMode] = mapValues(existing.splitValues, fmt);
+    if (base && base.splitMode !== 'equal' && base.splitValues) {
+      const fmt = base.splitMode === 'shares' ? String : base.splitMode === 'exact' ? paiseToInput : bpToInput;
+      v[base.splitMode] = mapValues(onlyHere(base.splitValues), fmt);
     }
     return v;
   });
   const [error, setError] = useState<string | null>(null);
 
-  // ---- "Paste from chat", and drafts (new expenses only) ----
+  // ---- "Paste from chat", and drafts (new expenses only, not a copy) ----
   const isNew = !existing;
+  // A copy is filled in already: no Paste from chat, and it never touches the group's draft.
+  const keepsDraft = isNew && !copied;
   // Paste from chat was converted: its preview takes the place of the form.
   const [chat, setChat] = useState(false);
   const onConvert = useCallback(() => setChat(true), []);
   const onClearChat = useCallback(() => setChat(false), []);
-  const [draftReady, setDraftReady] = useState(!isNew);
+  const [draftReady, setDraftReady] = useState(!keepsDraft);
   const [restoredAt, setRestoredAt] = useState<number | null>(null);
   const [manyInitial, setManyInitial] = useState<ManyForm | undefined>();
   const [panelKey, setPanelKey] = useState(0);
@@ -136,7 +144,7 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
   };
 
   useEffect(() => {
-    if (!isNew) return;
+    if (!keepsDraft) return;
     loadDraft(groupId)
       .then((d) => {
         if (!d) return;
@@ -153,12 +161,12 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
       .finally(() => setDraftReady(true));
     // Only on open.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupId, isNew]);
+  }, [groupId, keepsDraft]);
 
   const latest = useRef({ chat, oneForm });
   latest.current = { chat, oneForm };
   const persist = useCallback(() => {
-    if (!isNew || finished.current) return;
+    if (!keepsDraft || finished.current) return;
     const { chat: converted, oneForm: one } = latest.current;
     const oneEmpty = !one.title.trim() && !one.amountText.trim() && !one.note.trim();
     const manyEmpty = !many.current?.text.trim();
@@ -170,7 +178,7 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
         ...(manyEmpty ? {} : { many: many.current }),
         savedAt: Date.now(),
       }).catch(() => {});
-  }, [groupId, isNew]);
+  }, [groupId, keepsDraft]);
 
   // Save shortly after each change, and right away when leaving the page.
   // A plain timer, not state: setting state on every keystroke from the
@@ -228,7 +236,7 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
 
   const finish = () => {
     finished.current = true;
-    if (isNew) clearDraft(groupId).catch(() => {});
+    if (keepsDraft) clearDraft(groupId).catch(() => {});
     navigation.goBack();
   };
 
@@ -411,7 +419,7 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
                   selectionColor={GOLD}
                   keyboardType="decimal-pad"
                   keyboardAppearance={dark ? 'dark' : 'light'}
-                  autoFocus={isNew && !chat && !restoredAt}
+                  autoFocus={keepsDraft && !chat && !restoredAt}
                   maxLength={60}
                   // Grows for long sums on phones; a browser's text area would start two lines tall.
                   multiline={Platform.OS !== 'web'}
@@ -465,6 +473,13 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
             </View>
           ) : null}
 
+          {copied ? (
+            <View style={styles.banner}>
+              <Ionicons name="copy-outline" size={16} color={colors.textSecondary} />
+              <Text style={styles.bannerText}>{t('expense.copyBanner', { name: copied.title })}</Text>
+            </View>
+          ) : null}
+
           {existing?.archivedAt != null ? (
             <View style={styles.banner}>
               <Ionicons name="archive-outline" size={16} color={colors.textSecondary} />
@@ -472,7 +487,7 @@ export function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseFor
             </View>
           ) : null}
 
-          {isNew && draftReady ? (
+          {keepsDraft && draftReady ? (
             <QuickAddPanel
               key={panelKey}
               group={group}

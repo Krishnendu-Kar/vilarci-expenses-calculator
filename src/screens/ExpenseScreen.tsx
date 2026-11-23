@@ -1,14 +1,15 @@
-import React, { useLayoutEffect } from 'react';
+import React, { useLayoutEffect, useRef } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ScreenContainer } from '../components/ScreenContainer';
 import { Avatar } from '../components/Avatar';
 import { DISPLAY_FONT, GOLD } from '../components/LuxeCard';
 import { PrimaryButton } from '../components/PrimaryButton';
+import { MoreButton } from '../components/MoreButton';
 import { useGroup, useGroups } from '../context/GroupsContext';
 import { useLock } from '../context/LockContext';
+import { useMenu } from '../context/MenuContext';
 import { activeIn, counted, expenseShares } from '../lib/split';
-import { shareExpense } from '../lib/shareExpense';
 import { can } from '../lib/permissions';
 import { resolveMe } from '../lib/people';
 import { expenseMonth } from '../lib/months';
@@ -17,6 +18,7 @@ import { longDate, monthLabel } from '../lib/format';
 import { splitShort } from '../lib/describe';
 import { categoryOf } from '../data/categories';
 import { FormSection } from './expense/FormSection';
+import { useExpenseMenu } from './expense/useExpenseMenu';
 import { makeStyles, useTheme } from '../theme/ThemeContext';
 import { useI18n } from '../i18n/I18nContext';
 import { font, radii, spacing } from '../theme/tokens';
@@ -27,7 +29,8 @@ const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 /**
  * One expense, to read: who paid, who it's split between and each person's
  * part. Everyone in the group can open it, also where only admins may change
- * expenses; the pencil at the top right (when you may) opens the Edit page.
+ * expenses; the pencil at the top right (when you may) opens the Edit page,
+ * and ⋮ beside it has the expense's menu, with Info (its history).
  */
 export function ExpenseScreen({ navigation, route }: ScreenProps<'Expense'>) {
   const { groupId, expenseId } = route.params;
@@ -45,21 +48,19 @@ export function ExpenseScreen({ navigation, route }: ScreenProps<'Expense'>) {
     if (group) void open(group.id, t('lock.promptOpen', { name: group.name }));
   };
 
+  // ⋮ at the top right: the same menu as on the expense in the group's list (Info, Share,
+  // Copy link, and for editors Make a copy, Pin, Archive, Delete). Deleting closes this page.
+  const menu = useExpenseMenu(group, () => navigation.goBack());
+  const menuRef = useRef(menu);
+  menuRef.current = menu;
+  const { openMenu } = useMenu();
+
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight:
         group && expense && !closed
           ? () => (
               <View style={styles.headerActions}>
-                <Pressable
-                  onPress={() => void shareExpense(group, expense)}
-                  hitSlop={12}
-                  accessibilityRole="button"
-                  accessibilityLabel={t('expense.share')}
-                  style={({ pressed }) => pressed && styles.pressed}
-                >
-                  <Ionicons name="share-social-outline" size={21} color={colors.white} />
-                </Pressable>
                 {editable ? (
                   <Pressable
                     onPress={() => navigation.navigate('ExpenseForm', { groupId, expenseId })}
@@ -71,11 +72,19 @@ export function ExpenseScreen({ navigation, route }: ScreenProps<'Expense'>) {
                     <Ionicons name="create-outline" size={22} color={colors.white} />
                   </Pressable>
                 ) : null}
+                <MoreButton
+                  size={22}
+                  color={colors.white}
+                  hitSlop={12}
+                  onOpen={(anchor) =>
+                    openMenu(anchor, menuRef.current.items(expense), (key) => menuRef.current.pick(expense, key))
+                  }
+                />
               </View>
             )
           : () => null,
     });
-  }, [navigation, group, expense, closed, editable, groupId, expenseId, colors, styles, t]);
+  }, [navigation, group, expense, closed, editable, groupId, expenseId, colors, styles, t, openMenu]);
 
   if (!group || !expense) {
     return (
