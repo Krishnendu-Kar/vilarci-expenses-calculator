@@ -1,7 +1,7 @@
 # Vilarci E-Split
 
 Split shared expenses in a group (trip friends, hostel mess, flatmates) and see who pays whom at the end.
-Android app on Google Play (`in.vilarci.expensesplit`, version **2.3.0** / versionCode 7 next; 2.2.0 live).
+Android app on Google Play (`in.vilarci.expensesplit`, version **2.3.0** / versionCode 8 sent to Play; 2.2.0 live).
 Website: https://esplit.vilarci.in (separate repo, `vilarci-expenses-calculator-web`).
 
 ## Features

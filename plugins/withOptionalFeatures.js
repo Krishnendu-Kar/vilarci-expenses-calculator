@@ -7,7 +7,10 @@
  * tablets). Same for Wi-Fi (netinfo's ACCESS_WIFI_STATE implies it; the
  * "No internet" bar only needs to know if there's a connection) and the
  * touchscreen (Play assumes one unless told otherwise; on a Chromebook
- * without one, a mouse or trackpad taps just as well). Each feature is
+ * without one, a mouse or trackpad taps just as well). The portrait lock
+ * (app.json `orientation`) made Play read "needs a portrait screen" too
+ * (flagged on 2.3.0): phones stay portrait, but a device without one may
+ * still install it (Android 16 rotates big screens anyway). Each feature is
  * declared here as not required.
  */
 const { withAndroidManifest } = require('expo/config-plugins');
@@ -19,6 +22,7 @@ const OPTIONAL = [
   'android.hardware.fingerprint',
   'android.hardware.wifi',
   'android.hardware.touchscreen',
+  'android.hardware.screen.portrait',
 ];
 
 module.exports = function withOptionalFeatures(config) {
